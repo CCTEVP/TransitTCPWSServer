@@ -1,0 +1,39 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _SERVICE: transit-tcp-ws-server
+  _REGION: europe-west4
+  _REPOSITORY: cloud-run-source-deploy
+  _ZMQ_ENDPOINT: tcp://pubsub.besteffort.ndovloket.nl:7658
+  _ZMQ_TOPICS: /RIG/KV15messages,/RIG/KV17cvlinfo,/RIG/KV6posinfo
+  _MAX_PAYLOAD_BYTES: "200000"
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --port=8080
+      - --set-env-vars=NODE_ENV=production,ZMQ_ENDPOINT=${_ZMQ_ENDPOINT},ZMQ_TOPICS=${_ZMQ_TOPICS},MAX_PAYLOAD_BYTES=${_MAX_PAYLOAD_BYTES}
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA

@@ -1,0 +1,25 @@
+{
+  "name": "transit-tcp-ws-server",
+  "version": "1.0.0",
+  "description": "Bridge NDOV ZeroMQ TCP realtime feeds to WebSocket clients",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js"
+  },
+  "keywords": [
+    "ndov",
+    "zeromq",
+    "websocket",
+    "transit"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "fast-xml-parser": "^5.10.1",
+    "ws": "^8.18.3",
+    "zeromq": "^6.5.0"
+  }
+}

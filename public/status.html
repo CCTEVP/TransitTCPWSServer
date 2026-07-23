@@ -1,0 +1,864 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transit Bridge Status</title>
+    <style>
+      :root {
+        --bg: #eff3f4;
+        --card: #ffffff;
+        --ink: #17313d;
+        --muted: #5c727d;
+        --line: #d4e0e3;
+        --ok: #1b9c67;
+        --warn: #f18f01;
+        --bad: #c73e1d;
+        --accent: #006d77;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        background:
+          radial-gradient(circle at 5% 10%, #ffffff 0, #ffffff00 35%),
+          radial-gradient(circle at 95% 5%, #dff2f4 0, #ffffff00 30%),
+          linear-gradient(140deg, #f8fbfb 0%, var(--bg) 100%);
+      }
+
+      .wrap {
+        width: calc(100vw - 1rem);
+        max-width: none;
+        margin: 0.5rem auto 0.75rem;
+        padding: 0 0.25rem;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.5rem, 2.2vw + 0.8rem, 2.4rem);
+      }
+
+      .sub {
+        margin: 0.5rem 0 1.2rem;
+        color: var(--muted);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      @media (min-width: 920px) {
+        .grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 1rem;
+        box-shadow: 0 8px 26px rgba(12, 46, 58, 0.06);
+      }
+
+      .kpis {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.7rem;
+      }
+
+      .kpi {
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        padding: 0.7rem;
+      }
+
+      .kpi strong {
+        display: block;
+        font-size: 1.2rem;
+        margin-top: 0.2rem;
+      }
+
+      .label {
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+
+      .state {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.3rem 0.65rem;
+        margin-bottom: 0.9rem;
+      }
+
+      .dot {
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 999px;
+        background: #9eaeb4;
+      }
+
+      .dot.ok {
+        background: var(--ok);
+      }
+
+      .dot.warn {
+        background: var(--warn);
+      }
+
+      .dot.bad {
+        background: var(--bad);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        padding: 0.5rem 0.35rem;
+        font-size: 0.9rem;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .small {
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .footer {
+        margin-top: 1rem;
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.3rem 0.7rem;
+      }
+
+      .btn {
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        background: #fff;
+        border-radius: 8px;
+        padding: 0.45rem 0.85rem;
+        cursor: pointer;
+      }
+
+      .btn:hover {
+        background: #eef8f9;
+      }
+
+      .mono {
+        font-family: Consolas, "Courier New", monospace;
+      }
+
+      .stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+      }
+
+      .tag {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.18rem 0.45rem;
+        font-size: 0.78rem;
+      }
+
+      .messageCard {
+        margin-top: 1rem;
+      }
+
+      .messageSplit {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      @media (min-width: 1000px) {
+        .messageSplit {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      .messageHeader {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.8rem;
+      }
+
+      .messageHeader h2 {
+        margin: 0;
+      }
+
+      .headerTools {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.24rem 0.6rem;
+        font-size: 0.82rem;
+        color: var(--muted);
+        background: #fff;
+      }
+
+      .chip.live {
+        color: var(--ok);
+        border-color: #b7e8d4;
+        background: #f2fbf6;
+      }
+
+      .msgFeed {
+        margin-top: 0.75rem;
+        max-height: 40vh;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fdfefe;
+      }
+
+      .msgRow {
+        border-bottom: 1px solid #e6eef0;
+        padding: 0.65rem;
+      }
+
+      .msgRow:last-child {
+        border-bottom: none;
+      }
+
+      .msgTop {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.7rem;
+      }
+
+      .msgTopic {
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+
+      .msgMeta {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .msgPayload {
+        margin-top: 0.4rem;
+        border: 1px dashed #cfe0e4;
+        background: #fff;
+        border-radius: 8px;
+        padding: 0.45rem;
+        font-size: 0.78rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .msgDropped {
+        color: var(--bad);
+        font-size: 0.78rem;
+        margin-top: 0.35rem;
+      }
+
+      .msgEvent {
+        color: var(--accent);
+        font-size: 0.78rem;
+        margin-top: 0.35rem;
+      }
+
+      .emptyMsg {
+        padding: 0.75rem;
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+
+      @media (max-width: 720px) {
+        .messageHeader {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Transit Bridge Status</h1>
+      <p class="sub">
+        Checks upstream ZeroMQ feed health and active WebSocket clients.
+      </p>
+
+      <section class="grid">
+        <article class="card">
+          <div id="zmqState" class="state">
+            <span id="zmqDot" class="dot"></span>
+            <strong id="zmqStateText">Loading...</strong>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi">
+              <span class="label">Total messages</span>
+              <strong id="kpiMsgs">0</strong>
+            </div>
+            <div class="kpi">
+              <span class="label">Dropped messages</span>
+              <strong id="kpiDropped">0</strong>
+            </div>
+            <div class="kpi">
+              <span class="label">Last message ago</span>
+              <strong id="kpiLastMsg">-</strong>
+            </div>
+            <div class="kpi">
+              <span class="label">Connected ago</span>
+              <strong id="kpiConnectedAgo">-</strong>
+            </div>
+          </div>
+
+          <table>
+            <tbody>
+              <tr>
+                <th>Endpoint</th>
+                <td id="endpoint" class="mono">-</td>
+              </tr>
+              <tr>
+                <th>Topics</th>
+                <td><div id="topics" class="stack"></div></td>
+              </tr>
+              <tr>
+                <th>Started At</th>
+                <td id="startedAt">-</td>
+              </tr>
+              <tr>
+                <th>Last Error</th>
+                <td id="lastError">none</td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="card">
+          <h2>WebSocket Clients</h2>
+          <p class="small">Currently connected clients to this server.</p>
+
+          <div class="kpis" style="margin-bottom: 0.8rem">
+            <div class="kpi">
+              <span class="label">Content clients</span>
+              <strong id="wsTotal">0</strong>
+            </div>
+            <div class="kpi">
+              <span class="label">Control clients</span>
+              <strong id="wsControl">0</strong>
+            </div>
+            <div class="kpi">
+              <span class="label">Content messages sent</span>
+              <strong id="wsMsgCount">0</strong>
+            </div>
+            <div class="kpi">
+              <span class="label">Server uptime</span>
+              <strong id="uptime">-</strong>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Connected</th>
+                <th>Last Sent</th>
+                <th>Messages Sent</th>
+                <th>Remote</th>
+              </tr>
+            </thead>
+            <tbody id="clientsBody"></tbody>
+          </table>
+        </article>
+      </section>
+
+      <section class="messageSplit">
+        <article class="card messageCard">
+          <div class="messageHeader">
+            <h2>Live TCP Messages</h2>
+            <div class="headerTools">
+              <span id="wsLiveState" class="chip">WS: connecting</span>
+              <span id="msgCount" class="chip">0 shown</span>
+              <button id="clearMsgs" class="btn">Clear</button>
+            </div>
+          </div>
+          <p class="small">
+            Transit content messages (updates and parsed commands).
+          </p>
+          <div id="msgFeed" class="msgFeed">
+            <div class="emptyMsg">Waiting for incoming TCP messages...</div>
+          </div>
+        </article>
+
+        <article class="card messageCard">
+          <div class="messageHeader">
+            <h2>WebSocket Activity</h2>
+            <div class="headerTools">
+              <span id="wsEventCount" class="chip">0 shown</span>
+              <button id="clearWsEvents" class="btn">Clear</button>
+            </div>
+          </div>
+          <p class="small">
+            Content-room activity only: content client connect/disconnect and
+            content broadcast deliveries.
+          </p>
+          <div id="wsEventFeed" class="msgFeed">
+            <div class="emptyMsg">Waiting for WebSocket activity...</div>
+          </div>
+        </article>
+      </section>
+
+      <div class="footer">
+        <span id="lastRefresh" class="pill small">refreshing...</span>
+        <button id="refreshNow" class="btn">Refresh now</button>
+      </div>
+    </main>
+
+    <script>
+      const el = {
+        zmqDot: document.getElementById("zmqDot"),
+        zmqStateText: document.getElementById("zmqStateText"),
+        endpoint: document.getElementById("endpoint"),
+        topics: document.getElementById("topics"),
+        kpiMsgs: document.getElementById("kpiMsgs"),
+        kpiDropped: document.getElementById("kpiDropped"),
+        kpiLastMsg: document.getElementById("kpiLastMsg"),
+        kpiConnectedAgo: document.getElementById("kpiConnectedAgo"),
+        startedAt: document.getElementById("startedAt"),
+        lastError: document.getElementById("lastError"),
+        wsTotal: document.getElementById("wsTotal"),
+        wsControl: document.getElementById("wsControl"),
+        wsMsgCount: document.getElementById("wsMsgCount"),
+        uptime: document.getElementById("uptime"),
+        clientsBody: document.getElementById("clientsBody"),
+        lastRefresh: document.getElementById("lastRefresh"),
+        refreshNow: document.getElementById("refreshNow"),
+        wsLiveState: document.getElementById("wsLiveState"),
+        msgFeed: document.getElementById("msgFeed"),
+        msgCount: document.getElementById("msgCount"),
+        clearMsgs: document.getElementById("clearMsgs"),
+        wsEventFeed: document.getElementById("wsEventFeed"),
+        wsEventCount: document.getElementById("wsEventCount"),
+        clearWsEvents: document.getElementById("clearWsEvents"),
+      };
+
+      let shownMessages = 0;
+      let shownWsEvents = 0;
+      let refreshDebounce = null;
+      const maxRows = 10;
+
+      function humanSeconds(v) {
+        if (v === null || v === undefined) return "-";
+        if (v < 60) return `${v}s`;
+        const m = Math.floor(v / 60);
+        const s = v % 60;
+        if (m < 60) return `${m}m ${s}s`;
+        const h = Math.floor(m / 60);
+        const mm = m % 60;
+        return `${h}h ${mm}m`;
+      }
+
+      function stateClass(state) {
+        if (state === "connected") return "ok";
+        if (state === "error") return "bad";
+        return "warn";
+      }
+
+      function setTopics(topics) {
+        el.topics.innerHTML = "";
+        if (!Array.isArray(topics) || topics.length === 0) {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = "none";
+          el.topics.appendChild(tag);
+          return;
+        }
+
+        for (const topic of topics) {
+          const tag = document.createElement("span");
+          tag.className = "tag mono";
+          tag.textContent = topic;
+          el.topics.appendChild(tag);
+        }
+      }
+
+      function renderClients(clients) {
+        el.clientsBody.innerHTML = "";
+
+        if (!Array.isArray(clients) || clients.length === 0) {
+          const row = document.createElement("tr");
+          const cell = document.createElement("td");
+          cell.colSpan = 5;
+          cell.className = "small";
+          cell.textContent = "No connected content clients.";
+          row.appendChild(cell);
+          el.clientsBody.appendChild(row);
+          return;
+        }
+
+        for (const client of clients) {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td class="mono">${client.id || "-"}</td>
+            <td>${humanSeconds(client.secondsConnected)}</td>
+            <td>${humanSeconds(client.secondsSinceLastSent)}</td>
+            <td>${Number(client.sentCount || 0)}</td>
+            <td class="mono">${client.remoteAddress || "-"}</td>
+          `;
+          el.clientsBody.appendChild(row);
+        }
+      }
+
+      function scheduleRefreshSoon() {
+        if (refreshDebounce) {
+          return;
+        }
+
+        refreshDebounce = setTimeout(() => {
+          refreshDebounce = null;
+          refreshStatus();
+        }, 700);
+      }
+
+      function trimPayload(payloadText) {
+        if (!payloadText) {
+          return "";
+        }
+
+        if (payloadText.length <= 1600) {
+          return payloadText;
+        }
+
+        return `${payloadText.slice(0, 1600)}\n... [truncated]`;
+      }
+
+      function trimJson(value) {
+        const text = JSON.stringify(value || {}, null, 2);
+        return trimPayload(text);
+      }
+
+      function addMessageRow(message) {
+        const empty = el.msgFeed.querySelector(".emptyMsg");
+        if (empty) {
+          empty.remove();
+        }
+
+        const row = document.createElement("div");
+        row.className = "msgRow";
+
+        const top = document.createElement("div");
+        top.className = "msgTop";
+
+        const topic = document.createElement("div");
+        topic.className = "msgTopic mono";
+        topic.textContent = message.topic || "(no topic)";
+
+        const meta = document.createElement("div");
+        meta.className = "msgMeta";
+        const bytes = Number(message.payloadBytes || 0);
+        meta.textContent = `${new Date(message.receivedAt || Date.now()).toLocaleTimeString()} | ${bytes} bytes`;
+
+        top.appendChild(topic);
+        top.appendChild(meta);
+        row.appendChild(top);
+
+        if (message.dropped) {
+          const dropped = document.createElement("div");
+          dropped.className = "msgDropped";
+          dropped.textContent = message.reason || "Message dropped";
+          row.appendChild(dropped);
+        }
+
+        const payload = document.createElement("div");
+        payload.className = "msgPayload mono";
+        payload.textContent = trimPayload(
+          message.payloadPreview || message.payloadText || "",
+        );
+        row.appendChild(payload);
+
+        el.msgFeed.prepend(row);
+
+        while (el.msgFeed.children.length > maxRows) {
+          el.msgFeed.removeChild(el.msgFeed.lastChild);
+        }
+
+        shownMessages = Math.min(shownMessages + 1, maxRows);
+        el.msgCount.textContent = `${shownMessages} shown`;
+      }
+
+      function addCommandRow(message) {
+        const empty = el.msgFeed.querySelector(".emptyMsg");
+        if (empty) {
+          empty.remove();
+        }
+
+        const row = document.createElement("div");
+        row.className = "msgRow";
+
+        const top = document.createElement("div");
+        top.className = "msgTop";
+
+        const topic = document.createElement("div");
+        topic.className = "msgTopic mono";
+        topic.textContent = `${message.command || "UNKNOWN_COMMAND"} (${message.topic || "-"})`;
+
+        const meta = document.createElement("div");
+        meta.className = "msgMeta";
+        meta.textContent = `${new Date(message.receivedAt || Date.now()).toLocaleTimeString()} | ${message.protocol || "unknown"}`;
+
+        top.appendChild(topic);
+        top.appendChild(meta);
+        row.appendChild(top);
+
+        const payload = document.createElement("div");
+        payload.className = "msgPayload mono";
+        payload.textContent = trimJson(message);
+        row.appendChild(payload);
+
+        el.msgFeed.prepend(row);
+
+        while (el.msgFeed.children.length > maxRows) {
+          el.msgFeed.removeChild(el.msgFeed.lastChild);
+        }
+
+        shownMessages = Math.min(shownMessages + 1, maxRows);
+        el.msgCount.textContent = `${shownMessages} shown`;
+      }
+
+      function addWsEventRow(message) {
+        const empty = el.wsEventFeed.querySelector(".emptyMsg");
+        if (empty) {
+          empty.remove();
+        }
+
+        const row = document.createElement("div");
+        row.className = "msgRow";
+
+        const top = document.createElement("div");
+        top.className = "msgTop";
+
+        const title = document.createElement("div");
+        title.className = "msgTopic mono";
+        const payloadCommand = message?.payload?.command;
+        title.textContent =
+          message.event === "broadcast" && payloadCommand
+            ? `broadcast ${payloadCommand}`
+            : message.event || "ws-event";
+
+        const meta = document.createElement("div");
+        meta.className = "msgMeta";
+        meta.textContent = new Date(
+          message.at || Date.now(),
+        ).toLocaleTimeString();
+
+        top.appendChild(title);
+        top.appendChild(meta);
+        row.appendChild(top);
+
+        const eventInfo = document.createElement("div");
+        eventInfo.className = "msgEvent";
+        const channel = message.channel ? ` | channel: ${message.channel}` : "";
+        const recipients =
+          typeof message.recipients === "number"
+            ? ` | recipients: ${message.recipients}`
+            : "";
+        const type = message.messageType
+          ? ` | type: ${message.messageType}`
+          : "";
+        eventInfo.textContent =
+          `${message.clientId ? `client: ${message.clientId}` : ""}${channel}${type}${recipients}`.trim() ||
+          "activity";
+        row.appendChild(eventInfo);
+
+        const payload = document.createElement("div");
+        payload.className = "msgPayload mono";
+        if (message.event === "broadcast" && message.payload) {
+          // Show the exact broadcast payload sent to the content channel.
+          payload.textContent = JSON.stringify(message.payload, null, 2);
+        } else {
+          payload.textContent = trimJson(message);
+        }
+        row.appendChild(payload);
+
+        el.wsEventFeed.prepend(row);
+
+        while (el.wsEventFeed.children.length > maxRows) {
+          el.wsEventFeed.removeChild(el.wsEventFeed.lastChild);
+        }
+
+        shownWsEvents = Math.min(shownWsEvents + 1, maxRows);
+        el.wsEventCount.textContent = `${shownWsEvents} shown`;
+      }
+
+      function setWsLiveState(connected) {
+        el.wsLiveState.className = connected ? "chip live" : "chip";
+        el.wsLiveState.textContent = connected
+          ? "WS: live"
+          : "WS: reconnecting";
+      }
+
+      function connectLiveFeed() {
+        const protocol = location.protocol === "https:" ? "wss" : "ws";
+        const ws = new WebSocket(`${protocol}://${location.host}/control`);
+
+        ws.addEventListener("open", () => {
+          setWsLiveState(true);
+        });
+
+        ws.addEventListener("close", () => {
+          setWsLiveState(false);
+          setTimeout(connectLiveFeed, 1200);
+        });
+
+        ws.addEventListener("error", () => {
+          setWsLiveState(false);
+        });
+
+        ws.addEventListener("message", (event) => {
+          let data;
+          try {
+            data = JSON.parse(event.data);
+          } catch {
+            return;
+          }
+
+          if (data.type === "transit-update") {
+            addMessageRow(data);
+            scheduleRefreshSoon();
+            return;
+          }
+
+          if (data.type === "transit-command") {
+            addCommandRow(data);
+            scheduleRefreshSoon();
+            return;
+          }
+
+          if (data.type === "ws-event") {
+            if (data.channel && data.channel !== "content") {
+              return;
+            }
+            addWsEventRow(data);
+          }
+        });
+      }
+
+      async function refreshStatus() {
+        try {
+          const response = await fetch("/api/status", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          const state = data?.zmq?.state || "unknown";
+          el.zmqDot.className = `dot ${stateClass(state)}`;
+          el.zmqStateText.textContent = `ZeroMQ: ${state}`;
+
+          el.endpoint.textContent = data?.zmq?.endpoint || "-";
+          setTopics(data?.zmq?.topics || []);
+
+          el.kpiMsgs.textContent = String(data?.zmq?.totalMessages || 0);
+          el.kpiDropped.textContent = String(data?.zmq?.droppedMessages || 0);
+          el.kpiLastMsg.textContent = humanSeconds(
+            data?.zmq?.secondsSinceLastMessage,
+          );
+          el.kpiConnectedAgo.textContent = humanSeconds(
+            data?.zmq?.secondsSinceConnected,
+          );
+
+          el.startedAt.textContent = data?.startedAt || "-";
+          el.lastError.textContent = data?.zmq?.lastError
+            ? `${data.zmq.lastError.message} (${data.zmq.lastError.at})`
+            : "none";
+
+          const wsData = data?.websocket || {};
+          const allClients = Array.isArray(wsData.clients)
+            ? wsData.clients
+            : [];
+          const contentClients = Array.isArray(wsData.contentClients)
+            ? wsData.contentClients
+            : allClients.filter(
+                (client) => !client.channel || client.channel === "content",
+              );
+          const contentConnected =
+            typeof wsData.contentConnected === "number"
+              ? wsData.contentConnected
+              : contentClients.length;
+          const controlConnected =
+            typeof wsData.controlConnected === "number"
+              ? wsData.controlConnected
+              : allClients.filter((client) => client.channel === "control")
+                  .length;
+          const contentMessagesSent =
+            typeof wsData.contentMessagesSent === "number"
+              ? wsData.contentMessagesSent
+              : contentClients.reduce(
+                  (sum, client) => sum + Number(client.sentCount || 0),
+                  0,
+                );
+
+          el.wsTotal.textContent = String(contentConnected);
+          el.wsControl.textContent = String(controlConnected);
+          el.wsMsgCount.textContent = String(contentMessagesSent);
+          el.uptime.textContent = humanSeconds(data?.uptimeSeconds);
+
+          renderClients(contentClients);
+          el.lastRefresh.textContent = `Last refresh: ${new Date().toLocaleTimeString()}`;
+        } catch (error) {
+          el.zmqDot.className = "dot bad";
+          el.zmqStateText.textContent = "Status fetch failed";
+          el.lastRefresh.textContent = `Refresh error: ${error.message}`;
+        }
+      }
+
+      el.refreshNow.addEventListener("click", refreshStatus);
+      el.clearMsgs.addEventListener("click", () => {
+        shownMessages = 0;
+        el.msgCount.textContent = "0 shown";
+        el.msgFeed.innerHTML =
+          '<div class="emptyMsg">Waiting for incoming TCP messages...</div>';
+      });
+      el.clearWsEvents.addEventListener("click", () => {
+        shownWsEvents = 0;
+        el.wsEventCount.textContent = "0 shown";
+        el.wsEventFeed.innerHTML =
+          '<div class="emptyMsg">Waiting for WebSocket activity...</div>';
+      });
+      refreshStatus();
+      connectLiveFeed();
+      setInterval(refreshStatus, 5000);
+    </script>
+  </body>
+</html>

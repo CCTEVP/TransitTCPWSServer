@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transit TCP -> WebSocket Client</title>
+    <style>
+      :root {
+        --bg: #f5f4ee;
+        --panel: #fffdf6;
+        --ink: #1c2b33;
+        --accent: #0d8c7a;
+        --accent-2: #ff6f3c;
+        --muted: #5d6d75;
+        --border: #d8d7cf;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 10% 20%, #fff 0, #fff0 40%),
+          radial-gradient(circle at 90% 10%, #ffe8ce 0, #fff0 35%),
+          linear-gradient(135deg, #f8f7f1, var(--bg));
+      }
+
+      .wrap {
+        max-width: 1000px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: clamp(1.4rem, 2vw + 1rem, 2.5rem);
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: 999px;
+        padding: 0.4rem 0.8rem;
+        margin-bottom: 1rem;
+      }
+
+      .statusLink {
+        display: inline-block;
+        margin-left: 0.5rem;
+        color: var(--accent);
+        text-decoration: none;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 0.35rem 0.7rem;
+        background: #fff;
+      }
+
+      .statusLink:hover {
+        background: #f1f9f7;
+      }
+
+      .dot {
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 999px;
+        background: #999;
+      }
+
+      .dot.live {
+        background: var(--accent);
+        box-shadow: 0 0 0 0 rgba(13, 140, 122, 0.45);
+        animation: pulse 1.6s infinite;
+      }
+
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(13, 140, 122, 0.45);
+        }
+        70% {
+          box-shadow: 0 0 0 12px rgba(13, 140, 122, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(13, 140, 122, 0);
+        }
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      @media (min-width: 860px) {
+        .grid {
+          grid-template-columns: 280px 1fr;
+        }
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: 14px;
+        padding: 1rem;
+      }
+
+      .meta {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .meta li {
+        margin: 0.4rem 0;
+        color: var(--muted);
+      }
+
+      .log {
+        max-height: 70vh;
+        overflow: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      .event {
+        padding: 0.75rem;
+        border-bottom: 1px solid #ecebe2;
+      }
+
+      .event:last-child {
+        border-bottom: none;
+      }
+
+      .event h3 {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+
+      .event p {
+        margin: 0.2rem 0 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      pre {
+        margin: 0.5rem 0 0;
+        padding: 0.6rem;
+        border-radius: 8px;
+        background: #f4f8f7;
+        border: 1px dashed #c8d7d4;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 0.8rem;
+      }
+
+      .badge {
+        display: inline-block;
+        margin-left: 0.5rem;
+        padding: 0.15rem 0.4rem;
+        border-radius: 6px;
+        background: #ffe9df;
+        color: var(--accent-2);
+        font-size: 0.72rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Transit Signal Stream</h1>
+      <div class="status">
+        <span id="dot" class="dot"></span>
+        <strong id="statusText">Connecting...</strong>
+      </div>
+      <a class="statusLink" href="/status">Open Status Dashboard</a>
+
+      <section class="grid">
+        <article class="card">
+          <h2>Bridge Info</h2>
+          <ul class="meta">
+            <li><strong>Endpoint:</strong> <span id="endpoint">-</span></li>
+            <li><strong>Topics:</strong> <span id="topics">-</span></li>
+            <li><strong>Events received:</strong> <span id="count">0</span></li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h2>Live Feed</h2>
+          <div id="log" class="log"></div>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const statusText = document.getElementById("statusText");
+      const dot = document.getElementById("dot");
+      const endpointEl = document.getElementById("endpoint");
+      const topicsEl = document.getElementById("topics");
+      const countEl = document.getElementById("count");
+      const logEl = document.getElementById("log");
+
+      let count = 0;
+      const ws = new WebSocket(`ws://${location.host}/content`);
+
+      function setLive(isLive, text) {
+        dot.classList.toggle("live", isLive);
+        statusText.textContent = text;
+      }
+
+      function addEvent(event) {
+        const row = document.createElement("div");
+        row.className = "event";
+
+        const header = document.createElement("h3");
+        header.textContent = event.topic || event.type;
+
+        if (event.payloadBytes) {
+          const badge = document.createElement("span");
+          badge.className = "badge";
+          badge.textContent = `${event.payloadBytes} bytes`;
+          header.appendChild(badge);
+        }
+
+        const meta = document.createElement("p");
+        meta.textContent =
+          event.receivedAt || event.serverTime || new Date().toISOString();
+
+        const body = document.createElement("pre");
+        const snippet =
+          event.payloadText && event.payloadText.length > 2000
+            ? `${event.payloadText.slice(0, 2000)}\n... [truncated in UI]`
+            : event.payloadText || JSON.stringify(event, null, 2);
+        body.textContent = snippet;
+
+        row.appendChild(header);
+        row.appendChild(meta);
+        row.appendChild(body);
+
+        logEl.prepend(row);
+      }
+
+      ws.addEventListener("open", () => {
+        setLive(true, "Connected");
+      });
+
+      ws.addEventListener("close", () => {
+        setLive(false, "Disconnected");
+      });
+
+      ws.addEventListener("error", () => {
+        setLive(false, "Connection error");
+      });
+
+      ws.addEventListener("message", (message) => {
+        try {
+          const data = JSON.parse(message.data);
+
+          if (data.type === "bridge-status") {
+            endpointEl.textContent = data.endpoint || "-";
+            topicsEl.textContent = Array.isArray(data.topics)
+              ? data.topics.join(", ")
+              : "-";
+            addEvent(data);
+            return;
+          }
+
+          if (data.type === "transit-update") {
+            count += 1;
+            countEl.textContent = String(count);
+            addEvent(data);
+            return;
+          }
+
+          addEvent(data);
+        } catch (error) {
+          addEvent({
+            type: "parse-error",
+            payloadText: String(message.data),
+            receivedAt: new Date().toISOString(),
+          });
+        }
+      });
+    </script>
+  </body>
+</html>
