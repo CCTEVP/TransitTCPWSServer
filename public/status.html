@@ -6,104 +6,173 @@
     <title>Transit Bridge Status</title>
     <style>
       :root {
-        --bg: #eff3f4;
-        --card: #ffffff;
+        --bg: #eef2f6;
         --ink: #17313d;
         --muted: #5c727d;
         --line: #d4e0e3;
         --ok: #1b9c67;
         --warn: #f18f01;
         --bad: #c73e1d;
-        --accent: #006d77;
+        --tcp-bg: #eef6fb;
+        --tcp-card: #f8fcff;
+        --tcp-accent: #0e7490;
+        --tcp-border: #b9d9e8;
+        --tcp-feed: #f3f9fc;
+        --ws-bg: #f4f2fb;
+        --ws-card: #faf9ff;
+        --ws-accent: #6d4c9a;
+        --ws-border: #d4c8e8;
+        --ws-feed: #f7f4fc;
       }
 
       * {
         box-sizing: border-box;
       }
 
+      html,
+      body {
+        height: 100%;
+      }
+
       body {
         margin: 0;
         color: var(--ink);
         font-family: "Segoe UI", Tahoma, sans-serif;
-        background:
-          radial-gradient(circle at 5% 10%, #ffffff 0, #ffffff00 35%),
-          radial-gradient(circle at 95% 5%, #dff2f4 0, #ffffff00 30%),
-          linear-gradient(140deg, #f8fbfb 0%, var(--bg) 100%);
+        background: var(--bg);
       }
 
       .wrap {
-        width: calc(100vw - 1rem);
-        max-width: none;
-        margin: 0.5rem auto 0.75rem;
-        padding: 0 0.25rem;
+        display: flex;
+        flex-direction: column;
+        width: min(1500px, calc(100vw - 1rem));
+        min-height: 100vh;
+        margin: 0 auto;
+        padding: 0.6rem 0 0.8rem;
+      }
+
+      @media (min-width: 960px) {
+        .wrap {
+          height: 100vh;
+          overflow: hidden;
+        }
+      }
+
+      .topbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.6rem;
+        margin-bottom: 0.65rem;
+        padding: 0 0.15rem;
       }
 
       h1 {
         margin: 0;
-        font-size: clamp(1.5rem, 2.2vw + 0.8rem, 2.4rem);
+        font-size: 1.35rem;
       }
 
-      .sub {
-        margin: 0.5rem 0 1.2rem;
-        color: var(--muted);
-      }
-
-      .grid {
+      .split {
+        flex: 1;
         display: grid;
         grid-template-columns: 1fr;
-        gap: 1rem;
+        gap: 0.65rem;
+        min-height: 0;
       }
 
-      @media (min-width: 920px) {
-        .grid {
+      @media (min-width: 960px) {
+        .split {
           grid-template-columns: 1fr 1fr;
+          grid-template-rows: 1fr;
+          gap: 0;
+          border-radius: 14px;
+          overflow: hidden;
+          border: 1px solid var(--line);
+          box-shadow: 0 8px 24px rgba(12, 46, 58, 0.07);
         }
       }
 
-      .card {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 1rem;
-        box-shadow: 0 8px 26px rgba(12, 46, 58, 0.06);
+      .column {
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+        padding: 0.75rem;
+        min-height: 0;
+        height: 100%;
       }
 
-      .kpis {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0.7rem;
+      .column.tcp {
+        background: linear-gradient(180deg, var(--tcp-bg) 0%, #e8f3f8 100%);
       }
 
-      .kpi {
-        border: 1px dashed var(--line);
-        border-radius: 10px;
-        padding: 0.7rem;
+      .column.ws {
+        background: linear-gradient(180deg, var(--ws-bg) 0%, #ece8f6 100%);
       }
 
-      .kpi strong {
-        display: block;
-        font-size: 1.2rem;
-        margin-top: 0.2rem;
+      @media (min-width: 960px) {
+        .column.tcp {
+          border-right: 1px solid var(--line);
+        }
       }
 
-      .label {
-        color: var(--muted);
-        font-size: 0.86rem;
+      .column-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-bottom: 0.15rem;
       }
 
-      .state {
+      .column-title {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .column.tcp .column-title {
+        color: var(--tcp-accent);
+      }
+
+      .column.ws .column-title {
+        color: var(--ws-accent);
+      }
+
+      .summary-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+      }
+
+      .pill {
         display: inline-flex;
         align-items: center;
-        gap: 0.45rem;
-        border: 1px solid var(--line);
+        gap: 0.3rem;
         border-radius: 999px;
-        padding: 0.3rem 0.65rem;
-        margin-bottom: 0.9rem;
+        padding: 0.22rem 0.55rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.75);
+        border: 1px solid rgba(0, 0, 0, 0.06);
+      }
+
+      .pill strong {
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      .column.tcp .pill {
+        border-color: var(--tcp-border);
+      }
+
+      .column.ws .pill {
+        border-color: var(--ws-border);
       }
 
       .dot {
-        width: 0.7rem;
-        height: 0.7rem;
+        width: 0.5rem;
+        height: 0.5rem;
         border-radius: 999px;
         background: #9eaeb4;
       }
@@ -120,115 +189,49 @@
         background: var(--bad);
       }
 
-      table {
-        width: 100%;
-        border-collapse: collapse;
+      .card {
+        border-radius: 10px;
+        padding: 0.7rem 0.75rem;
+        border: 1px solid transparent;
       }
 
-      th,
-      td {
-        border-bottom: 1px solid var(--line);
-        text-align: left;
-        padding: 0.5rem 0.35rem;
-        font-size: 0.9rem;
-        vertical-align: top;
+      .column.tcp .card {
+        background: var(--tcp-card);
+        border-color: var(--tcp-border);
       }
 
-      th {
-        color: var(--muted);
-        font-weight: 600;
+      .column.ws .card {
+        background: var(--ws-card);
+        border-color: var(--ws-border);
       }
 
-      .small {
-        color: var(--muted);
-        font-size: 0.84rem;
-      }
-
-      .footer {
-        margin-top: 1rem;
-        display: flex;
-        gap: 0.75rem;
-        align-items: center;
-        justify-content: space-between;
-      }
-
-      .pill {
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 0.3rem 0.7rem;
-      }
-
-      .btn {
-        border: 1px solid var(--accent);
-        color: var(--accent);
-        background: #fff;
-        border-radius: 8px;
-        padding: 0.45rem 0.85rem;
-        cursor: pointer;
-      }
-
-      .btn:hover {
-        background: #eef8f9;
-      }
-
-      .mono {
-        font-family: Consolas, "Courier New", monospace;
-      }
-
-      .stack {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.4rem;
-      }
-
-      .tag {
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 0.18rem 0.45rem;
-        font-size: 0.78rem;
-      }
-
-      .messageCard {
-        margin-top: 1rem;
-      }
-
-      .messageSplit {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 1rem;
-      }
-
-      @media (min-width: 1000px) {
-        .messageSplit {
-          grid-template-columns: 1fr 1fr;
-        }
-      }
-
-      .messageHeader {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.8rem;
-      }
-
-      .messageHeader h2 {
+      .card h2 {
         margin: 0;
+        font-size: 0.92rem;
       }
 
-      .headerTools {
+      .card-head {
         display: flex;
         align-items: center;
+        justify-content: space-between;
         gap: 0.5rem;
+        margin-bottom: 0.35rem;
+      }
+
+      .tools {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
         flex-wrap: wrap;
       }
 
       .chip {
-        border: 1px solid var(--line);
         border-radius: 999px;
-        padding: 0.24rem 0.6rem;
-        font-size: 0.82rem;
+        padding: 0.15rem 0.45rem;
+        font-size: 0.75rem;
         color: var(--muted);
-        background: #fff;
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(0, 0, 0, 0.07);
       }
 
       .chip.live {
@@ -237,18 +240,41 @@
         background: #f2fbf6;
       }
 
+      .small {
+        color: var(--muted);
+        font-size: 0.78rem;
+        margin: 0 0 0.35rem;
+      }
+
       .msgFeed {
-        margin-top: 0.75rem;
-        max-height: 40vh;
+        flex: 1 1 auto;
+        min-height: 0;
         overflow: auto;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        background: #fdfefe;
+        border-radius: 8px;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+      }
+
+      .column.tcp .msgFeed {
+        background: var(--tcp-feed);
+        border-color: var(--tcp-border);
+      }
+
+      .column.ws .msgFeed {
+        background: var(--ws-feed);
+        border-color: var(--ws-border);
+      }
+
+      .feed-card {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
       }
 
       .msgRow {
-        border-bottom: 1px solid #e6eef0;
-        padding: 0.65rem;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        padding: 0.5rem 0.6rem;
       }
 
       .msgRow:last-child {
@@ -259,219 +285,260 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 0.7rem;
+        gap: 0.5rem;
       }
 
       .msgTopic {
         font-weight: 600;
-        font-size: 0.9rem;
+        font-size: 0.84rem;
       }
 
       .msgMeta {
         color: var(--muted);
-        font-size: 0.8rem;
+        font-size: 0.74rem;
+        white-space: nowrap;
       }
 
       .msgPayload {
-        margin-top: 0.4rem;
-        border: 1px dashed #cfe0e4;
-        background: #fff;
-        border-radius: 8px;
-        padding: 0.45rem;
-        font-size: 0.78rem;
+        margin-top: 0.3rem;
+        border-radius: 6px;
+        padding: 0.38rem;
+        font-size: 0.74rem;
         white-space: pre-wrap;
         word-break: break-word;
-      }
-
-      .msgDropped {
-        color: var(--bad);
-        font-size: 0.78rem;
-        margin-top: 0.35rem;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px dashed rgba(0, 0, 0, 0.08);
       }
 
       .msgEvent {
-        color: var(--accent);
-        font-size: 0.78rem;
-        margin-top: 0.35rem;
+        font-size: 0.74rem;
+        margin-top: 0.2rem;
+      }
+
+      .column.tcp .msgEvent {
+        color: var(--tcp-accent);
+      }
+
+      .column.ws .msgEvent {
+        color: var(--ws-accent);
       }
 
       .emptyMsg {
-        padding: 0.75rem;
+        padding: 0.6rem;
         color: var(--muted);
-        font-size: 0.86rem;
+        font-size: 0.82rem;
       }
 
-      @media (max-width: 720px) {
-        .messageHeader {
-          align-items: flex-start;
-          flex-direction: column;
-        }
+      .feed-block + .feed-block {
+        margin-top: 0.55rem;
+        padding-top: 0.55rem;
+        border-top: 1px dashed var(--tcp-border);
+      }
+
+      .feed-title {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.3rem;
+      }
+
+      .mono {
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 0.8rem;
+      }
+
+      .stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+      }
+
+      .tag {
+        border-radius: 999px;
+        padding: 0.12rem 0.42rem;
+        font-size: 0.72rem;
+        background: rgba(255, 255, 255, 0.85);
+        border: 1px solid var(--tcp-border);
+      }
+
+      .tag.turbo {
+        border-color: #9ec9d8;
+        background: #edf7fa;
+      }
+
+      .config-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-size: 0.8rem;
+      }
+
+      .config-list li {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.6rem;
+        padding: 0.24rem 0;
+        border-bottom: 1px dashed rgba(0, 0, 0, 0.07);
+      }
+
+      .config-list li:last-child {
+        border-bottom: none;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.82rem;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        text-align: left;
+        padding: 0.38rem 0.2rem;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 0.76rem;
+      }
+
+      .btn {
+        border-radius: 7px;
+        padding: 0.28rem 0.6rem;
+        font-size: 0.78rem;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      .column.tcp .btn {
+        border: 1px solid var(--tcp-accent);
+        color: var(--tcp-accent);
+      }
+
+      .column.tcp .btn:hover {
+        background: #e4f4fa;
+      }
+
+      .column.ws .btn {
+        border: 1px solid var(--ws-accent);
+        color: var(--ws-accent);
+      }
+
+      .column.ws .btn:hover {
+        background: #ede8f8;
+      }
+
+      .footer {
+        margin-top: 0.55rem;
+        display: flex;
+        justify-content: flex-end;
+        padding: 0 0.15rem;
+      }
+
+      .footer .btn {
+        border: 1px solid var(--line);
+        color: var(--ink);
       }
     </style>
   </head>
   <body>
     <main class="wrap">
-      <h1>Transit Bridge Status</h1>
-      <p class="sub">
-        Checks upstream ZeroMQ feed health and active WebSocket clients.
-      </p>
-
-      <section class="grid">
-        <article class="card">
-          <div id="zmqState" class="state">
-            <span id="zmqDot" class="dot"></span>
-            <strong id="zmqStateText">Loading...</strong>
-          </div>
-
-          <div class="kpis">
-            <div class="kpi">
-              <span class="label">Total received</span>
-              <strong id="kpiMsgs">0</strong>
-            </div>
-            <div class="kpi">
-              <span class="label">Relevant (filtered)</span>
-              <strong id="kpiRelevant">0</strong>
-            </div>
-            <div class="kpi">
-              <span class="label">Ignored (other stops)</span>
-              <strong id="kpiIgnored">0</strong>
-            </div>
-            <div class="kpi">
-              <span class="label">Dropped messages</span>
-              <strong id="kpiDropped">0</strong>
-            </div>
-            <div class="kpi">
-              <span class="label">Last message ago</span>
-              <strong id="kpiLastMsg">-</strong>
-            </div>
-            <div class="kpi">
-              <span class="label">Connected ago</span>
-              <strong id="kpiConnectedAgo">-</strong>
-            </div>
-          </div>
-
-          <table>
-            <tbody>
-              <tr>
-                <th>Endpoint</th>
-                <td id="endpoint" class="mono">-</td>
-              </tr>
-              <tr>
-                <th>Topics</th>
-                <td><div id="topics" class="stack"></div></td>
-              </tr>
-              <tr>
-                <th>Started At</th>
-                <td id="startedAt">-</td>
-              </tr>
-              <tr>
-                <th>Last Error</th>
-                <td id="lastError">none</td>
-              </tr>
-            </tbody>
-          </table>
-        </article>
-
-        <article class="card">
-          <h2>WebSocket Clients</h2>
-          <p class="small">Currently connected clients to this server.</p>
-
-          <div class="kpis" style="margin-bottom: 0.8rem">
-            <div class="kpi">
-              <span class="label">Content clients</span>
-              <strong id="wsTotal">0</strong>
-            </div>
-            <div class="kpi">
-              <span class="label">Control clients</span>
-              <strong id="wsControl">0</strong>
-            </div>
-            <div class="kpi">
-              <span class="label">Content messages sent</span>
-              <strong id="wsMsgCount">0</strong>
-            </div>
-            <div class="kpi">
-              <span class="label">Server uptime</span>
-              <strong id="uptime">-</strong>
-            </div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>Client</th>
-                <th>Connected</th>
-                <th>Last Sent</th>
-                <th>Messages Sent</th>
-                <th>Remote</th>
-              </tr>
-            </thead>
-            <tbody id="clientsBody"></tbody>
-          </table>
-        </article>
-      </section>
-
-      <section class="messageSplit">
-        <article class="card messageCard">
-          <div class="messageHeader">
-            <h2>Live TCP Messages</h2>
-            <div class="headerTools">
-              <span id="wsLiveState" class="chip">WS: connecting</span>
-              <span id="msgCount" class="chip">0 shown</span>
-              <button id="clearMsgs" class="btn">Clear</button>
-            </div>
-          </div>
-          <p class="small">
-            Only messages matching configured USERSTOPCODES (e.g. HA1162).
-          </p>
-          <div id="msgFeed" class="msgFeed">
-            <div class="emptyMsg">Waiting for incoming TCP messages...</div>
-          </div>
-        </article>
-
-        <article class="card messageCard">
-          <div class="messageHeader">
-            <h2>WebSocket Activity</h2>
-            <div class="headerTools">
-              <span id="wsEventCount" class="chip">0 shown</span>
-              <button id="clearWsEvents" class="btn">Clear</button>
-            </div>
-          </div>
-          <p class="small">
-            Content-room activity only: content client connect/disconnect and
-            content broadcast deliveries.
-          </p>
-          <div id="wsEventFeed" class="msgFeed">
-            <div class="emptyMsg">Waiting for WebSocket activity...</div>
-          </div>
-        </article>
-      </section>
-
-      <div class="footer">
-        <span id="lastRefresh" class="pill small">refreshing...</span>
-        <button id="refreshNow" class="btn">Refresh now</button>
+      <div class="topbar">
+        <h1>Transit Bridge</h1>
+        <button id="refreshNow" class="btn" type="button">Refresh</button>
       </div>
+
+      <section class="split">
+        <!-- LEFT: TCP / ZMQ -->
+        <div class="column tcp">
+          <div class="column-head">
+            <h2 class="column-title">TCP / ZeroMQ</h2>
+            <div id="tcpSummary" class="summary-strip"></div>
+          </div>
+
+          <article class="card">
+            <h2 style="margin-bottom: 0.45rem">Data feeds</h2>
+            <div id="feedsPanel"></div>
+          </article>
+
+          <article class="card feed-card">
+            <div class="card-head">
+              <h2>Live messages</h2>
+              <div class="tools">
+                <span id="msgCount" class="chip">0 shown</span>
+                <button id="clearMsgs" class="btn" type="button">Clear</button>
+              </div>
+            </div>
+            <p class="small">BISON + KV78Turbo for configured stops.</p>
+            <div id="msgFeed" class="msgFeed">
+              <div class="emptyMsg">Waiting for incoming TCP messages...</div>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2 style="margin-bottom: 0.4rem">Configuration</h2>
+            <ul id="configList" class="config-list"></ul>
+          </article>
+        </div>
+
+        <!-- RIGHT: WebSocket -->
+        <div class="column ws">
+          <div class="column-head">
+            <h2 class="column-title">WebSocket</h2>
+            <div id="wsSummary" class="summary-strip"></div>
+          </div>
+
+          <article class="card">
+            <div class="card-head">
+              <h2>Connection</h2>
+              <span id="wsLiveState" class="chip">WS: connecting</span>
+            </div>
+            <p class="small">Dashboard listens on the control channel.</p>
+          </article>
+
+          <article class="card feed-card">
+            <div class="card-head">
+              <h2>Content broadcasts</h2>
+              <div class="tools">
+                <span id="wsEventCount" class="chip">0 shown</span>
+                <button id="clearWsEvents" class="btn" type="button">Clear</button>
+              </div>
+            </div>
+            <p class="small">Commands sent to display clients.</p>
+            <div id="wsEventFeed" class="msgFeed">
+              <div class="emptyMsg">Waiting for broadcast activity...</div>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2 style="margin-bottom: 0.4rem">Connected clients</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Up</th>
+                  <th>Sent</th>
+                </tr>
+              </thead>
+              <tbody id="clientsBody"></tbody>
+            </table>
+          </article>
+        </div>
+      </section>
     </main>
 
     <script>
       const el = {
-        zmqDot: document.getElementById("zmqDot"),
-        zmqStateText: document.getElementById("zmqStateText"),
-        endpoint: document.getElementById("endpoint"),
-        topics: document.getElementById("topics"),
-        kpiMsgs: document.getElementById("kpiMsgs"),
-        kpiRelevant: document.getElementById("kpiRelevant"),
-        kpiIgnored: document.getElementById("kpiIgnored"),
-        kpiDropped: document.getElementById("kpiDropped"),
-        kpiLastMsg: document.getElementById("kpiLastMsg"),
-        kpiConnectedAgo: document.getElementById("kpiConnectedAgo"),
-        startedAt: document.getElementById("startedAt"),
-        lastError: document.getElementById("lastError"),
-        wsTotal: document.getElementById("wsTotal"),
-        wsControl: document.getElementById("wsControl"),
-        wsMsgCount: document.getElementById("wsMsgCount"),
-        uptime: document.getElementById("uptime"),
+        tcpSummary: document.getElementById("tcpSummary"),
+        wsSummary: document.getElementById("wsSummary"),
+        feedsPanel: document.getElementById("feedsPanel"),
+        configList: document.getElementById("configList"),
         clientsBody: document.getElementById("clientsBody"),
-        lastRefresh: document.getElementById("lastRefresh"),
         refreshNow: document.getElementById("refreshNow"),
         wsLiveState: document.getElementById("wsLiveState"),
         msgFeed: document.getElementById("msgFeed"),
@@ -485,41 +552,102 @@
       let shownMessages = 0;
       let shownWsEvents = 0;
       let refreshDebounce = null;
-      const maxRows = 10;
+      let dataStartedAt = "-";
+      const maxRows = 14;
 
       function humanSeconds(v) {
         if (v === null || v === undefined) return "-";
         if (v < 60) return `${v}s`;
         const m = Math.floor(v / 60);
         const s = v % 60;
-        if (m < 60) return `${m}m ${s}s`;
-        const h = Math.floor(m / 60);
-        const mm = m % 60;
-        return `${h}h ${mm}m`;
+        return `${m}m ${s}s`;
       }
 
       function stateClass(state) {
         if (state === "connected") return "ok";
         if (state === "error") return "bad";
+        if (state === "disabled") return "warn";
         return "warn";
       }
 
-      function setTopics(topics) {
-        el.topics.innerHTML = "";
+      function renderTags(topics, turbo = false) {
         if (!Array.isArray(topics) || topics.length === 0) {
-          const tag = document.createElement("span");
-          tag.className = "tag";
-          tag.textContent = "none";
-          el.topics.appendChild(tag);
-          return;
+          return '<span class="tag">none</span>';
         }
 
-        for (const topic of topics) {
-          const tag = document.createElement("span");
-          tag.className = "tag mono";
-          tag.textContent = topic;
-          el.topics.appendChild(tag);
-        }
+        return topics
+          .map(
+            (topic) =>
+              `<span class="tag mono${turbo ? " turbo" : ""}">${topic}</span>`,
+          )
+          .join("");
+      }
+
+      function renderFeeds(zmq) {
+        const bisonState = zmq?.state || "unknown";
+        const turbo = zmq?.turbo || {};
+        const turboState = turbo.enabled ? turbo.state || "unknown" : "disabled";
+
+        el.feedsPanel.innerHTML = `
+          <div class="feed-block">
+            <div class="feed-title">BISON (KV6/KV17)</div>
+            <div class="pill"><span class="dot ${stateClass(bisonState)}"></span><strong>${bisonState}</strong></div>
+            <div class="mono" style="margin: 0.3rem 0">${zmq?.endpoint || "-"}</div>
+            <div class="stack">${renderTags(zmq?.topics || [])}</div>
+          </div>
+          <div class="feed-block">
+            <div class="feed-title">KV78Turbo (forecasts)</div>
+            <div class="pill"><span class="dot ${stateClass(turboState)}"></span><strong>${turboState}</strong></div>
+            <div class="mono" style="margin: 0.3rem 0">${turbo.endpoint || "-"}</div>
+            <div class="stack">${renderTags(turbo.topics || [], true)}</div>
+            <div class="stack" style="margin-top: 0.35rem">
+              <span class="pill">Relevant <strong>${turbo.relevantMessages || 0}</strong></span>
+              <span class="pill">Ignored <strong>${turbo.ignoredMessages || 0}</strong></span>
+              <span class="pill">Last <strong>${humanSeconds(turbo.secondsSinceLastMessage)}</strong></span>
+            </div>
+          </div>
+        `;
+      }
+
+      function renderSummaries(data) {
+        const zmq = data?.zmq || {};
+        const ws = data?.websocket || {};
+        const stops = (zmq.userstopcodes || []).join(", ") || "all";
+
+        el.tcpSummary.innerHTML = `
+          <span class="pill"><span class="dot ${stateClass(zmq.state)}"></span> BISON <strong>${zmq.state || "?"}</strong></span>
+          <span class="pill"><span class="dot ${stateClass(zmq.turbo?.state)}"></span> Turbo <strong>${zmq.turbo?.enabled ? zmq.turbo?.state : "off"}</strong></span>
+          <span class="pill">BISON rel. <strong>${zmq.relevantMessages || 0}</strong></span>
+          <span class="pill">Turbo rel. <strong>${zmq.turbo?.relevantMessages || 0}</strong></span>
+          <span class="pill">Last BISON <strong>${humanSeconds(zmq.secondsSinceLastMessage)}</strong></span>
+        `;
+
+        el.wsSummary.innerHTML = `
+          <span class="pill">Content <strong>${ws.contentConnected || 0}</strong></span>
+          <span class="pill">Control <strong>${ws.controlConnected || 0}</strong></span>
+          <span class="pill">Sent <strong>${ws.contentMessagesSent || 0}</strong></span>
+          <span class="pill">Stop <strong>${stops}</strong></span>
+        `;
+      }
+
+      function renderConfig(config, zmq) {
+        const items = [
+          ["Stop filter", (zmq.userstopcodes || []).join(", ") || "all"],
+          ["Topic prefix", config?.rotterdamTopicPrefix || "-"],
+          ["No-train initial", `${config?.noTrainInitialDelayMs || "-"} ms`],
+          ["No-train after depart", `${config?.noTrainAfterDepartureMs || "-"} ms`],
+          ["Max payload", config?.maxPayloadBytes || "-"],
+          ["WS ping", `${config?.wsPingIntervalMs || "-"} ms`],
+          ["Started", dataStartedAt || "-"],
+          ["Last error", zmq.lastError ? zmq.lastError.message : "none"],
+        ];
+
+        el.configList.innerHTML = items
+          .map(
+            ([label, value]) =>
+              `<li><span>${label}</span><span class="mono">${value}</span></li>`,
+          )
+          .join("");
       }
 
       function renderClients(clients) {
@@ -527,11 +655,8 @@
 
         if (!Array.isArray(clients) || clients.length === 0) {
           const row = document.createElement("tr");
-          const cell = document.createElement("td");
-          cell.colSpan = 5;
-          cell.className = "small";
-          cell.textContent = "No connected content clients.";
-          row.appendChild(cell);
+          row.innerHTML =
+            '<td colspan="3" class="small">No content clients connected.</td>';
           el.clientsBody.appendChild(row);
           return;
         }
@@ -539,85 +664,40 @@
         for (const client of clients) {
           const row = document.createElement("tr");
           row.innerHTML = `
-            <td class="mono">${client.id || "-"}</td>
+            <td class="mono">${client.id?.slice(0, 8) || "-"}…</td>
             <td>${humanSeconds(client.secondsConnected)}</td>
-            <td>${humanSeconds(client.secondsSinceLastSent)}</td>
             <td>${Number(client.sentCount || 0)}</td>
-            <td class="mono">${client.remoteAddress || "-"}</td>
           `;
           el.clientsBody.appendChild(row);
         }
       }
 
-      function scheduleRefreshSoon() {
-        if (refreshDebounce) {
-          return;
-        }
-
-        refreshDebounce = setTimeout(() => {
-          refreshDebounce = null;
-          refreshStatus();
-        }, 700);
-      }
-
       function trimPayload(payloadText) {
-        if (!payloadText) {
-          return "";
-        }
-
-        if (payloadText.length <= 1600) {
-          return payloadText;
-        }
-
-        return `${payloadText.slice(0, 1600)}\n... [truncated]`;
+        if (!payloadText) return "";
+        if (payloadText.length <= 1400) return payloadText;
+        return `${payloadText.slice(0, 1400)}\n... [truncated]`;
       }
 
       function trimJson(value) {
-        const text = JSON.stringify(value || {}, null, 2);
-        return trimPayload(text);
+        return trimPayload(JSON.stringify(value || {}, null, 2));
       }
 
       function addMessageRow(message) {
         const empty = el.msgFeed.querySelector(".emptyMsg");
-        if (empty) {
-          empty.remove();
-        }
+        if (empty) empty.remove();
 
         const row = document.createElement("div");
         row.className = "msgRow";
-
-        const top = document.createElement("div");
-        top.className = "msgTop";
-
-        const topic = document.createElement("div");
-        topic.className = "msgTopic mono";
-        topic.textContent = message.topic || "(no topic)";
-
-        const meta = document.createElement("div");
-        meta.className = "msgMeta";
-        const bytes = Number(message.payloadBytes || 0);
-        meta.textContent = `${new Date(message.receivedAt || Date.now()).toLocaleTimeString()} | ${bytes} bytes`;
-
-        top.appendChild(topic);
-        top.appendChild(meta);
-        row.appendChild(top);
-
-        if (message.dropped) {
-          const dropped = document.createElement("div");
-          dropped.className = "msgDropped";
-          dropped.textContent = message.reason || "Message dropped";
-          row.appendChild(dropped);
-        }
-
-        const payload = document.createElement("div");
-        payload.className = "msgPayload mono";
-        payload.textContent = trimPayload(
-          message.payloadPreview || message.payloadText || "",
-        );
-        row.appendChild(payload);
+        const source = message.source ? `[${message.source}] ` : "";
+        row.innerHTML = `
+          <div class="msgTop">
+            <div class="msgTopic mono">${source}${message.topic || "(no topic)"}</div>
+            <div class="msgMeta">${new Date(message.receivedAt || Date.now()).toLocaleTimeString()}</div>
+          </div>
+          <div class="msgPayload mono">${trimPayload(message.payloadPreview || message.payloadText || "")}</div>
+        `;
 
         el.msgFeed.prepend(row);
-
         while (el.msgFeed.children.length > maxRows) {
           el.msgFeed.removeChild(el.msgFeed.lastChild);
         }
@@ -628,35 +708,19 @@
 
       function addCommandRow(message) {
         const empty = el.msgFeed.querySelector(".emptyMsg");
-        if (empty) {
-          empty.remove();
-        }
+        if (empty) empty.remove();
 
         const row = document.createElement("div");
         row.className = "msgRow";
-
-        const top = document.createElement("div");
-        top.className = "msgTop";
-
-        const topic = document.createElement("div");
-        topic.className = "msgTopic mono";
-        topic.textContent = `${message.command || "UNKNOWN_COMMAND"} (${message.topic || "-"})`;
-
-        const meta = document.createElement("div");
-        meta.className = "msgMeta";
-        meta.textContent = `${new Date(message.receivedAt || Date.now()).toLocaleTimeString()} | ${message.protocol || "unknown"}`;
-
-        top.appendChild(topic);
-        top.appendChild(meta);
-        row.appendChild(top);
-
-        const payload = document.createElement("div");
-        payload.className = "msgPayload mono";
-        payload.textContent = trimJson(message);
-        row.appendChild(payload);
+        row.innerHTML = `
+          <div class="msgTop">
+            <div class="msgTopic mono">${message.command || "COMMAND"}</div>
+            <div class="msgMeta">${new Date(message.receivedAt || Date.now()).toLocaleTimeString()}</div>
+          </div>
+          <div class="msgPayload mono">${trimJson(message)}</div>
+        `;
 
         el.msgFeed.prepend(row);
-
         while (el.msgFeed.children.length > maxRows) {
           el.msgFeed.removeChild(el.msgFeed.lastChild);
         }
@@ -667,61 +731,26 @@
 
       function addWsEventRow(message) {
         const empty = el.wsEventFeed.querySelector(".emptyMsg");
-        if (empty) {
-          empty.remove();
-        }
+        if (empty) empty.remove();
+
+        const payloadCommand = message?.payload?.command;
+        const title =
+          message.event === "broadcast" && payloadCommand
+            ? payloadCommand
+            : message.event || "ws-event";
 
         const row = document.createElement("div");
         row.className = "msgRow";
-
-        const top = document.createElement("div");
-        top.className = "msgTop";
-
-        const title = document.createElement("div");
-        title.className = "msgTopic mono";
-        const payloadCommand = message?.payload?.command;
-        title.textContent =
-          message.event === "broadcast" && payloadCommand
-            ? `broadcast ${payloadCommand}`
-            : message.event || "ws-event";
-
-        const meta = document.createElement("div");
-        meta.className = "msgMeta";
-        meta.textContent = new Date(
-          message.at || Date.now(),
-        ).toLocaleTimeString();
-
-        top.appendChild(title);
-        top.appendChild(meta);
-        row.appendChild(top);
-
-        const eventInfo = document.createElement("div");
-        eventInfo.className = "msgEvent";
-        const channel = message.channel ? ` | channel: ${message.channel}` : "";
-        const recipients =
-          typeof message.recipients === "number"
-            ? ` | recipients: ${message.recipients}`
-            : "";
-        const type = message.messageType
-          ? ` | type: ${message.messageType}`
-          : "";
-        eventInfo.textContent =
-          `${message.clientId ? `client: ${message.clientId}` : ""}${channel}${type}${recipients}`.trim() ||
-          "activity";
-        row.appendChild(eventInfo);
-
-        const payload = document.createElement("div");
-        payload.className = "msgPayload mono";
-        if (message.event === "broadcast" && message.payload) {
-          // Show the exact broadcast payload sent to the content channel.
-          payload.textContent = JSON.stringify(message.payload, null, 2);
-        } else {
-          payload.textContent = trimJson(message);
-        }
-        row.appendChild(payload);
+        row.innerHTML = `
+          <div class="msgTop">
+            <div class="msgTopic mono">${title}</div>
+            <div class="msgMeta">${new Date(message.at || Date.now()).toLocaleTimeString()}</div>
+          </div>
+          <div class="msgEvent">${message.recipients !== undefined ? `recipients: ${message.recipients}` : ""}</div>
+          <div class="msgPayload mono">${message.event === "broadcast" && message.payload ? trimJson(message.payload) : trimJson(message)}</div>
+        `;
 
         el.wsEventFeed.prepend(row);
-
         while (el.wsEventFeed.children.length > maxRows) {
           el.wsEventFeed.removeChild(el.wsEventFeed.lastChild);
         }
@@ -732,27 +761,27 @@
 
       function setWsLiveState(connected) {
         el.wsLiveState.className = connected ? "chip live" : "chip";
-        el.wsLiveState.textContent = connected
-          ? "WS: live"
-          : "WS: reconnecting";
+        el.wsLiveState.textContent = connected ? "WS: live" : "WS: reconnecting";
+      }
+
+      function scheduleRefreshSoon() {
+        if (refreshDebounce) return;
+        refreshDebounce = setTimeout(() => {
+          refreshDebounce = null;
+          refreshStatus();
+        }, 700);
       }
 
       function connectLiveFeed() {
         const protocol = location.protocol === "https:" ? "wss" : "ws";
         const ws = new WebSocket(`${protocol}://${location.host}/control`);
 
-        ws.addEventListener("open", () => {
-          setWsLiveState(true);
-        });
-
+        ws.addEventListener("open", () => setWsLiveState(true));
         ws.addEventListener("close", () => {
           setWsLiveState(false);
           setTimeout(connectLiveFeed, 1200);
         });
-
-        ws.addEventListener("error", () => {
-          setWsLiveState(false);
-        });
+        ws.addEventListener("error", () => setWsLiveState(false));
 
         ws.addEventListener("message", (event) => {
           let data;
@@ -775,9 +804,7 @@
           }
 
           if (data.type === "ws-event") {
-            if (data.channel && data.channel !== "content") {
-              return;
-            }
+            if (data.channel && data.channel !== "content") return;
             addWsEventRow(data);
           }
         });
@@ -786,72 +813,25 @@
       async function refreshStatus() {
         try {
           const response = await fetch("/api/status", { cache: "no-store" });
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
           const data = await response.json();
+          dataStartedAt = data?.startedAt || "-";
 
-          const state = data?.zmq?.state || "unknown";
-          el.zmqDot.className = `dot ${stateClass(state)}`;
-          el.zmqStateText.textContent = `ZeroMQ: ${state}`;
-
-          el.endpoint.textContent = data?.zmq?.endpoint || "-";
-          setTopics(data?.zmq?.topics || []);
-
-          el.kpiMsgs.textContent = String(data?.zmq?.totalMessages || 0);
-          el.kpiRelevant.textContent = String(data?.zmq?.relevantMessages || 0);
-          el.kpiIgnored.textContent = String(data?.zmq?.ignoredMessages || 0);
-          el.kpiDropped.textContent = String(data?.zmq?.droppedMessages || 0);
-          el.kpiLastMsg.textContent = humanSeconds(
-            data?.zmq?.secondsSinceLastMessage,
-          );
-          el.kpiConnectedAgo.textContent = humanSeconds(
-            data?.zmq?.secondsSinceConnected,
-          );
-
-          el.startedAt.textContent = data?.startedAt || "-";
-          el.lastError.textContent = data?.zmq?.lastError
-            ? `${data.zmq.lastError.message} (${data.zmq.lastError.at})`
-            : "none";
+          renderSummaries(data);
+          renderFeeds(data?.zmq || {});
+          renderConfig(data?.config || {}, data?.zmq || {});
 
           const wsData = data?.websocket || {};
-          const allClients = Array.isArray(wsData.clients)
-            ? wsData.clients
-            : [];
           const contentClients = Array.isArray(wsData.contentClients)
             ? wsData.contentClients
-            : allClients.filter(
+            : (wsData.clients || []).filter(
                 (client) => !client.channel || client.channel === "content",
               );
-          const contentConnected =
-            typeof wsData.contentConnected === "number"
-              ? wsData.contentConnected
-              : contentClients.length;
-          const controlConnected =
-            typeof wsData.controlConnected === "number"
-              ? wsData.controlConnected
-              : allClients.filter((client) => client.channel === "control")
-                  .length;
-          const contentMessagesSent =
-            typeof wsData.contentMessagesSent === "number"
-              ? wsData.contentMessagesSent
-              : contentClients.reduce(
-                  (sum, client) => sum + Number(client.sentCount || 0),
-                  0,
-                );
-
-          el.wsTotal.textContent = String(contentConnected);
-          el.wsControl.textContent = String(controlConnected);
-          el.wsMsgCount.textContent = String(contentMessagesSent);
-          el.uptime.textContent = humanSeconds(data?.uptimeSeconds);
-
           renderClients(contentClients);
-          el.lastRefresh.textContent = `Last refresh: ${new Date().toLocaleTimeString()}`;
-        } catch (error) {
-          el.zmqDot.className = "dot bad";
-          el.zmqStateText.textContent = "Status fetch failed";
-          el.lastRefresh.textContent = `Refresh error: ${error.message}`;
+        } catch {
+          el.tcpSummary.innerHTML =
+            '<span class="pill"><span class="dot bad"></span> Status fetch failed</span>';
         }
       }
 
@@ -866,8 +846,9 @@
         shownWsEvents = 0;
         el.wsEventCount.textContent = "0 shown";
         el.wsEventFeed.innerHTML =
-          '<div class="emptyMsg">Waiting for WebSocket activity...</div>';
+          '<div class="emptyMsg">Waiting for broadcast activity...</div>';
       });
+
       refreshStatus();
       connectLiveFeed();
       setInterval(refreshStatus, 5000);

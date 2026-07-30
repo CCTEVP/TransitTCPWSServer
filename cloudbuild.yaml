@@ -7,6 +7,10 @@ substitutions:
   _REPOSITORY: cloud-run-source-deploy
   _ZMQ_ENDPOINT: tcp://pubsub.besteffort.ndovloket.nl:7658
   _ZMQ_TOPICS: /RIG/KV17cvlinfo,/RIG/KV6posinfo
+  _ZMQ_TURBO_ENABLED: "true"
+  _ZMQ_TURBO_ENDPOINT: tcp://pubsub.besteffort.ndovloket.nl:7817
+  _ZMQ_TURBO_TOPICS: /GOVI/KV8passtimes/RET
+  _USERSTOPCODES: HA1162
   _MAX_PAYLOAD_BYTES: "200000"
 
 steps:
@@ -33,7 +37,7 @@ steps:
       - --platform=managed
       - --allow-unauthenticated
       - --port=8080
-      - --set-env-vars=NODE_ENV=production,ZMQ_ENDPOINT=${_ZMQ_ENDPOINT},ZMQ_TOPICS=${_ZMQ_TOPICS},MAX_PAYLOAD_BYTES=${_MAX_PAYLOAD_BYTES}
+      - --set-env-vars=NODE_ENV=production,ZMQ_ENDPOINT=${_ZMQ_ENDPOINT},ZMQ_TOPICS=${_ZMQ_TOPICS},ZMQ_TURBO_ENABLED=${_ZMQ_TURBO_ENABLED},ZMQ_TURBO_ENDPOINT=${_ZMQ_TURBO_ENDPOINT},ZMQ_TURBO_TOPICS=${_ZMQ_TURBO_TOPICS},USERSTOPCODES=${_USERSTOPCODES},MAX_PAYLOAD_BYTES=${_MAX_PAYLOAD_BYTES}
 
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$COMMIT_SHA
