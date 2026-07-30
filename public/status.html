@@ -325,8 +325,16 @@
 
           <div class="kpis">
             <div class="kpi">
-              <span class="label">Total messages</span>
+              <span class="label">Total received</span>
               <strong id="kpiMsgs">0</strong>
+            </div>
+            <div class="kpi">
+              <span class="label">Relevant (filtered)</span>
+              <strong id="kpiRelevant">0</strong>
+            </div>
+            <div class="kpi">
+              <span class="label">Ignored (other stops)</span>
+              <strong id="kpiIgnored">0</strong>
             </div>
             <div class="kpi">
               <span class="label">Dropped messages</span>
@@ -413,7 +421,7 @@
             </div>
           </div>
           <p class="small">
-            Transit content messages (updates and parsed commands).
+            Only messages matching configured USERSTOPCODES (e.g. HA1162).
           </p>
           <div id="msgFeed" class="msgFeed">
             <div class="emptyMsg">Waiting for incoming TCP messages...</div>
@@ -451,6 +459,8 @@
         endpoint: document.getElementById("endpoint"),
         topics: document.getElementById("topics"),
         kpiMsgs: document.getElementById("kpiMsgs"),
+        kpiRelevant: document.getElementById("kpiRelevant"),
+        kpiIgnored: document.getElementById("kpiIgnored"),
         kpiDropped: document.getElementById("kpiDropped"),
         kpiLastMsg: document.getElementById("kpiLastMsg"),
         kpiConnectedAgo: document.getElementById("kpiConnectedAgo"),
@@ -790,6 +800,8 @@
           setTopics(data?.zmq?.topics || []);
 
           el.kpiMsgs.textContent = String(data?.zmq?.totalMessages || 0);
+          el.kpiRelevant.textContent = String(data?.zmq?.relevantMessages || 0);
+          el.kpiIgnored.textContent = String(data?.zmq?.ignoredMessages || 0);
           el.kpiDropped.textContent = String(data?.zmq?.droppedMessages || 0);
           el.kpiLastMsg.textContent = humanSeconds(
             data?.zmq?.secondsSinceLastMessage,

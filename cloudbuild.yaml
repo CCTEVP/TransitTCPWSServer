@@ -6,7 +6,7 @@ substitutions:
   _REGION: europe-west4
   _REPOSITORY: cloud-run-source-deploy
   _ZMQ_ENDPOINT: tcp://pubsub.besteffort.ndovloket.nl:7658
-  _ZMQ_TOPICS: /RIG/KV15messages,/RIG/KV17cvlinfo,/RIG/KV6posinfo
+  _ZMQ_TOPICS: /RIG/KV17cvlinfo,/RIG/KV6posinfo
   _MAX_PAYLOAD_BYTES: "200000"
 
 steps:

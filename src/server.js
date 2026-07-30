@@ -12,7 +12,7 @@ const PORT = Number(process.env.PORT || 8080);
 const ZMQ_ENDPOINT =
   process.env.ZMQ_ENDPOINT || "tcp://pubsub.besteffort.ndovloket.nl:7658";
 const ZMQ_TOPICS = (
-  process.env.ZMQ_TOPICS || "/RIG/KV15messages,/RIG/KV17cvlinfo,/RIG/KV6posinfo"
+  process.env.ZMQ_TOPICS || "/RIG/KV17cvlinfo,/RIG/KV6posinfo"
 )
   .split(",")
   .map((s) => s.trim())
@@ -21,11 +21,25 @@ const MAX_PAYLOAD_BYTES = Number(process.env.MAX_PAYLOAD_BYTES || 200000);
 const WS_CHANNEL_CONTROL = "control";
 const WS_CHANNEL_CONTENT = "content";
 const ROTTERDAM_TOPIC_PREFIX = process.env.ROTTERDAM_TOPIC_PREFIX || "/RIG/";
+const USERSTOPCODES = (process.env.USERSTOPCODES || "")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
 const ALLOWED_RET_COMMANDS = new Set([
   "RET_NO_TRAIN",
   "RET_TRAIN_ARRIVING_15S",
   "RET_TRAIN_ARRIVED",
+  "RET_TRAIN_DEPARTED",
 ]);
+const NO_TRAIN_INITIAL_DELAY_MS = Number(
+  process.env.NO_TRAIN_INITIAL_DELAY_MS || 30000,
+);
+const NO_TRAIN_AFTER_DEPARTURE_MS = Number(
+  process.env.NO_TRAIN_AFTER_DEPARTURE_MS || 30000,
+);
+let initialNoTrainSent = false;
+let departureNoTrainTimer = null;
+const arrivingTimers = new Map();
 
 const app = express();
 app.use(express.static(path.join(__dirname, "..", "public")));
@@ -41,6 +55,7 @@ const wss = new WebSocket.Server({ server });
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "",
+  removeNSPrefix: true,
   trimValues: true,
   parseTagValue: false,
 });
@@ -58,7 +73,10 @@ const bridgeStatus = {
     lastMessageAt: null,
     totalMessages: 0,
     droppedMessages: 0,
+    ignoredMessages: 0,
+    relevantMessages: 0,
     lastError: null,
+    userstopcodes: USERSTOPCODES,
   },
 };
 
@@ -274,6 +292,11 @@ wss.on("connection", (socket, request) => {
     });
   }
 
+  socket.isAlive = true;
+  socket.on("pong", () => {
+    socket.isAlive = true;
+  });
+
   socket.on("close", () => {
     wsClientMeta.delete(socket);
     console.log(`[WS] Client disconnected (${channel})`);
@@ -287,6 +310,18 @@ wss.on("connection", (socket, request) => {
     }
   });
 });
+
+const WS_PING_INTERVAL_MS = 25000;
+setInterval(() => {
+  for (const client of wss.clients) {
+    if (!client.isAlive) {
+      client.terminate();
+      continue;
+    }
+    client.isAlive = false;
+    client.ping();
+  }
+}, WS_PING_INTERVAL_MS);
 
 function safeUtf8(buffer) {
   try {
@@ -333,16 +368,44 @@ function extractEntity(node) {
   }
 
   return {
-    dataownercode: node.dataownercode || null,
-    lineplanningnumber: node.lineplanningnumber || null,
-    operatingday: node.operatingday || null,
-    journeynumber: node.journeynumber || null,
-    reinforcementnumber: node.reinforcementnumber || null,
-    userstopcode: node.userstopcode || null,
-    passagesequencenumber: node.passagesequencenumber || null,
-    vehiclenumber: node.vehiclenumber || null,
-    timestamp: node.timestamp || null,
+    dataownercode: getRowValue(node, "dataownercode"),
+    lineplanningnumber: getRowValue(node, "lineplanningnumber"),
+    operatingday: getRowValue(node, ["operatingday", "operatingdate"]),
+    journeynumber: getRowValue(node, "journeynumber"),
+    reinforcementnumber: getRowValue(node, "reinforcementnumber"),
+    userstopcode: getRowValue(node, "userstopcode"),
+    passagesequencenumber: getRowValue(node, "passagesequencenumber"),
+    vehiclenumber: getRowValue(node, "vehiclenumber"),
+    timestamp: getRowValue(node, "timestamp"),
   };
+}
+
+function getRowValue(row, fieldNames) {
+  if (!row || typeof row !== "object") {
+    return null;
+  }
+
+  const names = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
+
+  for (const name of names) {
+    if (row[name] !== undefined && row[name] !== null && row[name] !== "") {
+      return row[name];
+    }
+
+    const key = Object.keys(row).find(
+      (candidate) => candidate.toLowerCase() === String(name).toLowerCase(),
+    );
+    if (
+      key &&
+      row[key] !== undefined &&
+      row[key] !== null &&
+      row[key] !== ""
+    ) {
+      return row[key];
+    }
+  }
+
+  return null;
 }
 
 function asUpperString(value) {
@@ -383,15 +446,14 @@ function extractEtaSeconds(row, receivedAt) {
     return null;
   }
 
-  const numericCandidates = [
-    "secondsleft",
-    "remainingseconds",
-    "timetostop",
-    "punctuality",
-  ];
+  const operatingDay =
+    getRowValue(row, ["operatingday", "operatingdate", "timestamp"]) ||
+    receivedAt;
+
+  const numericCandidates = ["secondsleft", "remainingseconds", "timetostop"];
 
   for (const field of numericCandidates) {
-    const value = row[field];
+    const value = getRowValue(row, field);
     if (value === undefined || value === null || value === "") {
       continue;
     }
@@ -402,27 +464,45 @@ function extractEtaSeconds(row, receivedAt) {
     }
   }
 
+  const expectedArrival = getRowValue(row, "expectedarrivaltime");
+  if (expectedArrival) {
+    const arrivalDate = toDateOnDay(expectedArrival, operatingDay, receivedAt);
+    if (arrivalDate) {
+      return Math.round(
+        (arrivalDate.getTime() - new Date(receivedAt).getTime()) / 1000,
+      );
+    }
+  }
+
+  const targetArrival = getRowValue(row, "targetarrivaltime");
+  if (targetArrival) {
+    const targetDate = toDateOnDay(targetArrival, operatingDay, receivedAt);
+    if (targetDate) {
+      const punctuality = Number(getRowValue(row, "punctuality"));
+      const punctualityMs = Number.isFinite(punctuality) ? punctuality * 1000 : 0;
+      const expectedMs = targetDate.getTime() + punctualityMs;
+      return Math.round(
+        (expectedMs - new Date(receivedAt).getTime()) / 1000,
+      );
+    }
+  }
+
   const timeCandidates = [
-    "expectedarrivaltime",
-    "targetarrivaltime",
     "actualarrivaltime",
     "arrivaltime",
+    "targetdeparturetime",
   ];
 
   for (const field of timeCandidates) {
-    const arrivalDate = toDateOnDay(
-      row[field],
-      row.operatingday || row.timestamp,
-      receivedAt,
-    );
+    const value = getRowValue(row, field);
+    const arrivalDate = toDateOnDay(value, operatingDay, receivedAt);
     if (!arrivalDate) {
       continue;
     }
 
-    const eta = Math.round(
+    return Math.round(
       (arrivalDate.getTime() - new Date(receivedAt).getTime()) / 1000,
     );
-    return eta;
   }
 
   return null;
@@ -459,8 +539,14 @@ function buildRotterdamTrainStateCommands(topic, baseCommands) {
     const command = asUpperString(baseCommand.command);
     const row = baseCommand.data || {};
     const etaSeconds = extractEtaSeconds(row, baseCommand.receivedAt);
+    const stopCode = String(baseCommand.entity?.userstopcode || "").toLowerCase();
+    const journeyKey = getJourneyKeyFromCommand(baseCommand);
+    const approachKey = stopCode && journeyKey ? `${stopCode}|${journeyKey}` : null;
 
     if (containsNoTrainSignal(row, baseCommand)) {
+      if (approachKey) {
+        clearArrivingTimer(approachKey);
+      }
       stateCommands.push({
         type: "transit-command",
         protocol: "RET",
@@ -474,16 +560,27 @@ function buildRotterdamTrainStateCommands(topic, baseCommands) {
       continue;
     }
 
-    const isArrivalProgress =
-      (protocol === "KV6" || protocol === "KV17") &&
-      (command.includes("ARRIVAL") || command.includes("ONROUTE"));
+    const isApproachUpdate =
+      (protocol === "KV6" || protocol === "KV17") && command.includes("ONROUTE");
 
     if (
-      isArrivalProgress &&
+      isApproachUpdate &&
       Number.isFinite(etaSeconds) &&
-      etaSeconds >= 0 &&
+      etaSeconds > 15
+    ) {
+      scheduleArriving15s(topic, baseCommand, etaSeconds);
+      continue;
+    }
+
+    if (
+      isApproachUpdate &&
+      Number.isFinite(etaSeconds) &&
+      etaSeconds > 0 &&
       etaSeconds <= 15
     ) {
+      if (approachKey) {
+        clearArrivingTimer(approachKey);
+      }
       stateCommands.push({
         type: "transit-command",
         protocol: "RET",
@@ -498,18 +595,47 @@ function buildRotterdamTrainStateCommands(topic, baseCommands) {
       continue;
     }
 
+    const isPureArrival =
+      (protocol === "KV6" || protocol === "KV17") && command.endsWith("_ARRIVAL");
+
     const isArrived =
       command.includes("ONSTOP") ||
+      isPureArrival ||
       command.includes("END") ||
       (command.includes("ARRIVAL") &&
         Number.isFinite(etaSeconds) &&
         etaSeconds <= 0);
 
     if (isArrived) {
+      if (approachKey) {
+        clearArrivingTimer(approachKey);
+      }
       stateCommands.push({
         type: "transit-command",
         protocol: "RET",
         command: "RET_TRAIN_ARRIVED",
+        topic,
+        receivedAt: baseCommand.receivedAt,
+        sourceCommand: baseCommand.command,
+        entity: baseCommand.entity,
+        data: row,
+      });
+      continue;
+    }
+
+    const isDeparted =
+      command.includes("DEPARTURE") ||
+      command.includes("DEPART") ||
+      command.includes("OFFROUTE");
+
+    if (isDeparted) {
+      if (approachKey) {
+        clearArrivingTimer(approachKey);
+      }
+      stateCommands.push({
+        type: "transit-command",
+        protocol: "RET",
+        command: "RET_TRAIN_DEPARTED",
         topic,
         receivedAt: baseCommand.receivedAt,
         sourceCommand: baseCommand.command,
@@ -528,6 +654,114 @@ function isAllowedRetCommand(commandMessage) {
     commandMessage?.protocol === "RET" &&
     ALLOWED_RET_COMMANDS.has(commandMessage?.command)
   );
+}
+
+function matchesUserStopCode(row) {
+  if (USERSTOPCODES.length === 0) {
+    return true;
+  }
+
+  const stopCode = String(getRowValue(row, "userstopcode") || "").toLowerCase();
+  return USERSTOPCODES.includes(stopCode);
+}
+
+function filterBaseCommandsByStop(baseCommands) {
+  if (USERSTOPCODES.length === 0) {
+    return baseCommands;
+  }
+
+  return baseCommands.filter((command) => {
+    return (
+      matchesUserStopCode(command.entity) || matchesUserStopCode(command.data)
+    );
+  });
+}
+
+function xmlContainsTrackedStop(xmlText) {
+  if (USERSTOPCODES.length === 0) {
+    return true;
+  }
+
+  const lowerText = String(xmlText || "").toLowerCase();
+  return USERSTOPCODES.some((stopCode) => lowerText.includes(stopCode));
+}
+
+function getStopCodeFromCommand(commandMessage) {
+  return String(
+    commandMessage?.entity?.userstopcode ||
+      commandMessage?.data?.userstopcode ||
+      USERSTOPCODES[0] ||
+      "",
+  ).toLowerCase();
+}
+
+function getJourneyKeyFromCommand(commandMessage) {
+  const entity = commandMessage?.entity || {};
+  return [
+    entity.dataownercode,
+    entity.lineplanningnumber,
+    entity.journeynumber,
+    entity.vehiclenumber,
+  ]
+    .filter(Boolean)
+    .join("|");
+}
+
+const stopStates = new Map();
+
+function processStopCommand(commandMessage) {
+  const stopCode = getStopCodeFromCommand(commandMessage);
+  const journeyKey = getJourneyKeyFromCommand(commandMessage);
+  const command = commandMessage.command;
+  const current = stopStates.get(stopCode) || {
+    command: null,
+    journeyKey: null,
+  };
+
+  if (command === "RET_NO_TRAIN") {
+    stopStates.set(stopCode, { command, journeyKey: null });
+    return { broadcast: true, scheduleDepartureTimer: false, clearDepartureTimer: true };
+  }
+
+  if (command === "RET_TRAIN_ARRIVING_15S") {
+    if (
+      current.command === "RET_TRAIN_ARRIVING_15S" &&
+      journeyKey === current.journeyKey
+    ) {
+      return {
+        broadcast: false,
+        scheduleDepartureTimer: false,
+        clearDepartureTimer: false,
+      };
+    }
+
+    stopStates.set(stopCode, { command, journeyKey });
+    return { broadcast: true, scheduleDepartureTimer: false, clearDepartureTimer: true };
+  }
+
+  if (command === "RET_TRAIN_ARRIVED") {
+    if (
+      current.command === "RET_TRAIN_DEPARTED" &&
+      journeyKey === current.journeyKey
+    ) {
+      return { broadcast: false, scheduleDepartureTimer: false, clearDepartureTimer: false };
+    }
+
+    stopStates.set(stopCode, { command, journeyKey });
+    return { broadcast: true, scheduleDepartureTimer: false, clearDepartureTimer: false };
+  }
+
+  if (command === "RET_TRAIN_DEPARTED") {
+    const enteringDeparted = current.command !== "RET_TRAIN_DEPARTED";
+    stopStates.set(stopCode, { command, journeyKey });
+    return {
+      broadcast: true,
+      scheduleDepartureTimer: enteringDeparted,
+      clearDepartureTimer: false,
+    };
+  }
+
+  return { broadcast: true, scheduleDepartureTimer: false, clearDepartureTimer: false };
 }
 
 function buildTransitCommands(topic, parsedXml, receivedAt) {
@@ -587,6 +821,110 @@ function buildTransitCommands(topic, parsedXml, receivedAt) {
   ];
 }
 
+function clearArrivingTimer(approachKey) {
+  const timer = arrivingTimers.get(approachKey);
+  if (timer) {
+    clearTimeout(timer);
+    arrivingTimers.delete(approachKey);
+  }
+}
+
+function scheduleArriving15s(topic, baseCommand, etaSeconds) {
+  const stopCode = String(baseCommand.entity?.userstopcode || "").toLowerCase();
+  const journeyKey = getJourneyKeyFromCommand(baseCommand);
+  if (!stopCode || !journeyKey) {
+    return;
+  }
+
+  const approachKey = `${stopCode}|${journeyKey}`;
+  clearArrivingTimer(approachKey);
+
+  const delayMs = Math.max(0, (etaSeconds - 15) * 1000);
+  const timer = setTimeout(() => {
+    arrivingTimers.delete(approachKey);
+    const current = stopStates.get(stopCode);
+    if (
+      current?.journeyKey === journeyKey &&
+      (current.command === "RET_TRAIN_ARRIVED" ||
+        current.command === "RET_TRAIN_DEPARTED")
+    ) {
+      return;
+    }
+
+    emitDerivedCommand({
+      type: "transit-command",
+      protocol: "RET",
+      command: "RET_TRAIN_ARRIVING_15S",
+      topic,
+      receivedAt: new Date().toISOString(),
+      sourceCommand: "SCHEDULED_ETA",
+      etaSeconds: 15,
+      entity: baseCommand.entity,
+      data: baseCommand.data,
+    });
+  }, delayMs);
+
+  arrivingTimers.set(approachKey, timer);
+}
+
+function emitDerivedCommand(commandMessage) {
+  initialNoTrainSent = true;
+
+  const { broadcast, scheduleDepartureTimer, clearDepartureTimer } =
+    processStopCommand(commandMessage);
+
+  if (!broadcast) {
+    return;
+  }
+
+  if (clearDepartureTimer) {
+    clearDepartureNoTrainTimer();
+  }
+
+  if (scheduleDepartureTimer) {
+    scheduleDepartureNoTrain(commandMessage);
+  }
+
+  broadcastControlJson(commandMessage);
+  broadcastJson(commandMessage);
+}
+
+function clearDepartureNoTrainTimer() {
+  if (departureNoTrainTimer) {
+    clearTimeout(departureNoTrainTimer);
+    departureNoTrainTimer = null;
+  }
+}
+
+function scheduleDepartureNoTrain(departureCommand) {
+  if (departureNoTrainTimer) {
+    return;
+  }
+
+  departureNoTrainTimer = setTimeout(() => {
+    departureNoTrainTimer = null;
+    const stopCode = getStopCodeFromCommand(departureCommand);
+    stopStates.set(stopCode, { command: "RET_NO_TRAIN", journeyKey: null });
+
+    const noTrainMessage = {
+      type: "transit-command",
+      protocol: "RET",
+      command: "RET_NO_TRAIN",
+      topic: departureCommand.topic,
+      receivedAt: new Date().toISOString(),
+      sourceCommand: "DEPARTURE_TIMEOUT",
+      entity: departureCommand.entity,
+      data: {},
+    };
+
+    broadcastControlJson(noTrainMessage);
+    broadcastJson(noTrainMessage);
+    console.log(
+      `[RET] No new train after departure — sent RET_NO_TRAIN (${NO_TRAIN_AFTER_DEPARTURE_MS}ms timeout)`,
+    );
+  }, NO_TRAIN_AFTER_DEPARTURE_MS);
+}
+
 async function startZmqBridge() {
   for (const topic of ZMQ_TOPICS) {
     subscriber.subscribe(topic);
@@ -597,6 +935,11 @@ async function startZmqBridge() {
   bridgeStatus.zmq.connectedAt = new Date().toISOString();
   console.log(`[ZMQ] Connected to ${ZMQ_ENDPOINT}`);
   console.log(`[ZMQ] Subscribed topics: ${ZMQ_TOPICS.join(", ")}`);
+  if (USERSTOPCODES.length > 0) {
+    console.log(
+      `[ZMQ] Filtering activity to userstopcodes: ${USERSTOPCODES.join(", ")}`,
+    );
+  }
 
   for await (const msg of subscriber) {
     if (!Array.isArray(msg) || msg.length === 0) {
@@ -615,15 +958,6 @@ async function startZmqBridge() {
       bridgeStatus.zmq.droppedMessages += 1;
       bridgeStatus.zmq.totalMessages += 1;
       bridgeStatus.zmq.lastMessageAt = droppedAt;
-
-      broadcastControlJson({
-        type: "transit-update",
-        topic,
-        dropped: true,
-        reason: `Payload exceeded MAX_PAYLOAD_BYTES (${MAX_PAYLOAD_BYTES})`,
-        payloadBytes: payloadBuffer.length,
-        receivedAt: droppedAt,
-      });
       continue;
     }
 
@@ -631,29 +965,41 @@ async function startZmqBridge() {
     let decoded;
     try {
       decoded = detectAndDecodePayload(payloadBuffer);
-    } catch (decodeError) {
+    } catch {
       bridgeStatus.zmq.droppedMessages += 1;
       bridgeStatus.zmq.totalMessages += 1;
       bridgeStatus.zmq.lastMessageAt = receivedAt;
+      continue;
+    }
 
-      broadcastControlJson({
-        type: "transit-update",
-        topic,
-        dropped: true,
-        reason: `Decode failed: ${decodeError.message}`,
-        payloadBytes: payloadBuffer.length,
-        receivedAt,
-      });
+    bridgeStatus.zmq.totalMessages += 1;
+    bridgeStatus.zmq.lastMessageAt = receivedAt;
+
+    // NDOV topics cannot filter by stop at subscribe-time. Drop everything
+    // that does not mention a configured userstopcode before parsing/broadcast.
+    if (
+      USERSTOPCODES.length > 0 &&
+      (!decoded.text || !xmlContainsTrackedStop(decoded.text))
+    ) {
+      bridgeStatus.zmq.ignoredMessages += 1;
       continue;
     }
 
     let commandMessages = [];
+    let matchingRows = [];
     let parseError = null;
 
     if (decoded.text && decoded.text.trimStart().startsWith("<")) {
       try {
         const parsedXml = xmlParser.parse(decoded.text);
-        const baseCommands = buildTransitCommands(topic, parsedXml, receivedAt);
+        const baseCommands = filterBaseCommandsByStop(
+          buildTransitCommands(topic, parsedXml, receivedAt),
+        );
+        matchingRows = baseCommands.map((command) => ({
+          sourceCommand: command.command,
+          entity: command.entity,
+          data: command.data,
+        }));
         commandMessages = buildRotterdamTrainStateCommands(
           topic,
           baseCommands,
@@ -661,36 +1007,76 @@ async function startZmqBridge() {
       } catch (error) {
         parseError = error?.message || String(error);
         commandMessages = [];
+        matchingRows = [];
       }
     }
 
-    bridgeStatus.zmq.totalMessages += 1;
-    bridgeStatus.zmq.lastMessageAt = receivedAt;
+    // A batch XML can mention HA1162 in text but still produce no usable rows
+    // after structured filtering — ignore those as well.
+    if (USERSTOPCODES.length > 0 && matchingRows.length === 0 && !parseError) {
+      bridgeStatus.zmq.ignoredMessages += 1;
+      continue;
+    }
 
-    // Full TCP telemetry goes to control clients for monitoring.
+    bridgeStatus.zmq.relevantMessages += 1;
+
+    // Control clients only receive stop-relevant activity.
     broadcastControlJson({
       type: "transit-update",
       topic,
       encoding: decoded.encoding,
       commandCount: commandMessages.length,
+      matchingRowCount: matchingRows.length,
+      userstopcodes: USERSTOPCODES,
       payloadBytes: payloadBuffer.length,
-      payloadText: decoded.text,
-      payloadBase64: payloadBuffer.toString("base64"),
-      payloadPreview: decoded.text ? decoded.text.slice(0, 1000) : null,
+      matchingRows,
+      payloadPreview:
+        matchingRows.length > 0
+          ? JSON.stringify(matchingRows, null, 2).slice(0, 2000)
+          : decoded.text
+            ? decoded.text.slice(0, 1000)
+            : null,
       parseError,
       receivedAt,
     });
 
     for (const commandMessage of commandMessages) {
-      // Mirror the exact command payload to control clients for dashboard visibility.
-      broadcastControlJson(commandMessage);
-      broadcastJson(commandMessage);
+      emitDerivedCommand(commandMessage);
     }
   }
 }
 
+function sendInitialNoTrain() {
+  if (initialNoTrainSent || USERSTOPCODES.length === 0) {
+    return;
+  }
+
+  initialNoTrainSent = true;
+  for (const stopCode of USERSTOPCODES) {
+    stopStates.set(stopCode, { command: "RET_NO_TRAIN", journeyKey: null });
+  }
+
+  const noTrainMessage = {
+    type: "transit-command",
+    protocol: "RET",
+    command: "RET_NO_TRAIN",
+    topic: ROTTERDAM_TOPIC_PREFIX,
+    receivedAt: new Date().toISOString(),
+    sourceCommand: "INITIAL_TIMEOUT",
+    entity: { userstopcode: USERSTOPCODES[0] },
+    data: {},
+  };
+
+  broadcastControlJson(noTrainMessage);
+  broadcastJson(noTrainMessage);
+  console.log(
+    `[RET] No train info received for ${USERSTOPCODES.join(",")} within ${NO_TRAIN_INITIAL_DELAY_MS}ms — sent RET_NO_TRAIN`,
+  );
+}
+
 server.listen(PORT, () => {
   console.log(`[HTTP/WS] Server listening on http://localhost:${PORT}`);
+  setTimeout(sendInitialNoTrain, NO_TRAIN_INITIAL_DELAY_MS);
 });
 
 startZmqBridge().catch((error) => {
