@@ -1,0 +1,61 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+#display {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+}
+
+.state-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.state-video.active {
+  opacity: 1;
+  visibility: visible;
+  z-index: 1;
+}
+
+.connection-dot {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.connection-dot.connected {
+  opacity: 0;
+}
+
+.connection-dot.disconnected {
+  opacity: 1;
+  background: #dc2626;
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.8);
+}

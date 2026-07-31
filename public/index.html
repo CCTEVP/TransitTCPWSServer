@@ -3,289 +3,855 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Transit TCP -> WebSocket Client</title>
+    <title>Transit Bridge Status</title>
     <style>
       :root {
-        --bg: #f5f4ee;
-        --panel: #fffdf6;
-        --ink: #1c2b33;
-        --accent: #0d8c7a;
-        --accent-2: #ff6f3c;
-        --muted: #5d6d75;
-        --border: #d8d7cf;
+        --bg: #eef2f6;
+        --ink: #17313d;
+        --muted: #5c727d;
+        --line: #d4e0e3;
+        --ok: #1b9c67;
+        --warn: #f18f01;
+        --bad: #c73e1d;
+        --tcp-bg: #eef6fb;
+        --tcp-card: #f8fcff;
+        --tcp-accent: #0e7490;
+        --tcp-border: #b9d9e8;
+        --tcp-feed: #f3f9fc;
+        --ws-bg: #f4f2fb;
+        --ws-card: #faf9ff;
+        --ws-accent: #6d4c9a;
+        --ws-border: #d4c8e8;
+        --ws-feed: #f7f4fc;
       }
 
       * {
         box-sizing: border-box;
       }
 
+      html,
+      body {
+        height: 100%;
+      }
+
       body {
         margin: 0;
-        font-family: "Trebuchet MS", "Segoe UI", sans-serif;
         color: var(--ink);
-        background:
-          radial-gradient(circle at 10% 20%, #fff 0, #fff0 40%),
-          radial-gradient(circle at 90% 10%, #ffe8ce 0, #fff0 35%),
-          linear-gradient(135deg, #f8f7f1, var(--bg));
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        background: var(--bg);
       }
 
       .wrap {
-        max-width: 1000px;
-        margin: 2rem auto;
-        padding: 0 1rem;
+        display: flex;
+        flex-direction: column;
+        width: min(1500px, calc(100vw - 1rem));
+        min-height: 100vh;
+        margin: 0 auto;
+        padding: 0.6rem 0 0.8rem;
+      }
+
+      @media (min-width: 960px) {
+        .wrap {
+          height: 100vh;
+          overflow: hidden;
+        }
+      }
+
+      .topbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.6rem;
+        margin-bottom: 0.65rem;
+        padding: 0 0.15rem;
       }
 
       h1 {
-        margin: 0 0 0.75rem;
-        font-size: clamp(1.4rem, 2vw + 1rem, 2.5rem);
+        margin: 0;
+        font-size: 1.35rem;
       }
 
-      .status {
+      .split {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.65rem;
+        min-height: 0;
+      }
+
+      @media (min-width: 960px) {
+        .split {
+          grid-template-columns: 1fr 1fr;
+          grid-template-rows: 1fr;
+          gap: 0;
+          border-radius: 14px;
+          overflow: hidden;
+          border: 1px solid var(--line);
+          box-shadow: 0 8px 24px rgba(12, 46, 58, 0.07);
+        }
+      }
+
+      .column {
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+        padding: 0.75rem;
+        min-height: 0;
+        height: 100%;
+      }
+
+      .column.tcp {
+        background: linear-gradient(180deg, var(--tcp-bg) 0%, #e8f3f8 100%);
+      }
+
+      .column.ws {
+        background: linear-gradient(180deg, var(--ws-bg) 0%, #ece8f6 100%);
+      }
+
+      @media (min-width: 960px) {
+        .column.tcp {
+          border-right: 1px solid var(--line);
+        }
+      }
+
+      .column-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-bottom: 0.15rem;
+      }
+
+      .column-title {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .column.tcp .column-title {
+        color: var(--tcp-accent);
+      }
+
+      .column.ws .column-title {
+        color: var(--ws-accent);
+      }
+
+      .summary-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+      }
+
+      .pill {
         display: inline-flex;
         align-items: center;
-        gap: 0.5rem;
-        border: 1px solid var(--border);
-        background: var(--panel);
+        gap: 0.3rem;
         border-radius: 999px;
-        padding: 0.4rem 0.8rem;
-        margin-bottom: 1rem;
+        padding: 0.22rem 0.55rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.75);
+        border: 1px solid rgba(0, 0, 0, 0.06);
       }
 
-      .statusLink {
-        display: inline-block;
-        margin-left: 0.5rem;
-        color: var(--accent);
-        text-decoration: none;
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        padding: 0.35rem 0.7rem;
-        background: #fff;
+      .pill strong {
+        color: var(--ink);
+        font-weight: 600;
       }
 
-      .statusLink:hover {
-        background: #f1f9f7;
+      .column.tcp .pill {
+        border-color: var(--tcp-border);
+      }
+
+      .column.ws .pill {
+        border-color: var(--ws-border);
       }
 
       .dot {
-        width: 0.7rem;
-        height: 0.7rem;
+        width: 0.5rem;
+        height: 0.5rem;
         border-radius: 999px;
-        background: #999;
+        background: #9eaeb4;
       }
 
-      .dot.live {
-        background: var(--accent);
-        box-shadow: 0 0 0 0 rgba(13, 140, 122, 0.45);
-        animation: pulse 1.6s infinite;
+      .dot.ok {
+        background: var(--ok);
       }
 
-      @keyframes pulse {
-        0% {
-          box-shadow: 0 0 0 0 rgba(13, 140, 122, 0.45);
-        }
-        70% {
-          box-shadow: 0 0 0 12px rgba(13, 140, 122, 0);
-        }
-        100% {
-          box-shadow: 0 0 0 0 rgba(13, 140, 122, 0);
-        }
+      .dot.warn {
+        background: var(--warn);
       }
 
-      .grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 1rem;
-      }
-
-      @media (min-width: 860px) {
-        .grid {
-          grid-template-columns: 280px 1fr;
-        }
+      .dot.bad {
+        background: var(--bad);
       }
 
       .card {
-        border: 1px solid var(--border);
-        background: var(--panel);
-        border-radius: 14px;
-        padding: 1rem;
-      }
-
-      .meta {
-        margin: 0;
-        padding: 0;
-        list-style: none;
-      }
-
-      .meta li {
-        margin: 0.4rem 0;
-        color: var(--muted);
-      }
-
-      .log {
-        max-height: 70vh;
-        overflow: auto;
-        border: 1px solid var(--border);
         border-radius: 10px;
-        background: #fff;
+        padding: 0.7rem 0.75rem;
+        border: 1px solid transparent;
       }
 
-      .event {
-        padding: 0.75rem;
-        border-bottom: 1px solid #ecebe2;
+      .column.tcp .card {
+        background: var(--tcp-card);
+        border-color: var(--tcp-border);
       }
 
-      .event:last-child {
+      .column.ws .card {
+        background: var(--ws-card);
+        border-color: var(--ws-border);
+      }
+
+      .card h2 {
+        margin: 0;
+        font-size: 0.92rem;
+      }
+
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-bottom: 0.35rem;
+      }
+
+      .tools {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+      }
+
+      .chip {
+        border-radius: 999px;
+        padding: 0.15rem 0.45rem;
+        font-size: 0.75rem;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(0, 0, 0, 0.07);
+      }
+
+      .chip.live {
+        color: var(--ok);
+        border-color: #b7e8d4;
+        background: #f2fbf6;
+      }
+
+      .small {
+        color: var(--muted);
+        font-size: 0.78rem;
+        margin: 0 0 0.35rem;
+      }
+
+      .msgFeed {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        border-radius: 8px;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+      }
+
+      .column.tcp .msgFeed {
+        background: var(--tcp-feed);
+        border-color: var(--tcp-border);
+      }
+
+      .column.ws .msgFeed {
+        background: var(--ws-feed);
+        border-color: var(--ws-border);
+      }
+
+      .feed-card {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .msgRow {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        padding: 0.5rem 0.6rem;
+      }
+
+      .msgRow:last-child {
         border-bottom: none;
       }
 
-      .event h3 {
-        margin: 0;
-        font-size: 0.95rem;
+      .msgTop {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
       }
 
-      .event p {
-        margin: 0.2rem 0 0;
+      .msgTopic {
+        font-weight: 600;
+        font-size: 0.84rem;
+      }
+
+      .msgMeta {
         color: var(--muted);
-        font-size: 0.88rem;
+        font-size: 0.74rem;
+        white-space: nowrap;
       }
 
-      pre {
-        margin: 0.5rem 0 0;
-        padding: 0.6rem;
-        border-radius: 8px;
-        background: #f4f8f7;
-        border: 1px dashed #c8d7d4;
+      .msgPayload {
+        margin-top: 0.3rem;
+        border-radius: 6px;
+        padding: 0.38rem;
+        font-size: 0.74rem;
         white-space: pre-wrap;
         word-break: break-word;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px dashed rgba(0, 0, 0, 0.08);
+      }
+
+      .msgEvent {
+        font-size: 0.74rem;
+        margin-top: 0.2rem;
+      }
+
+      .column.tcp .msgEvent {
+        color: var(--tcp-accent);
+      }
+
+      .column.ws .msgEvent {
+        color: var(--ws-accent);
+      }
+
+      .emptyMsg {
+        padding: 0.6rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .feed-block + .feed-block {
+        margin-top: 0.55rem;
+        padding-top: 0.55rem;
+        border-top: 1px dashed var(--tcp-border);
+      }
+
+      .feed-title {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.3rem;
+      }
+
+      .mono {
+        font-family: Consolas, "Courier New", monospace;
         font-size: 0.8rem;
       }
 
-      .badge {
-        display: inline-block;
-        margin-left: 0.5rem;
-        padding: 0.15rem 0.4rem;
-        border-radius: 6px;
-        background: #ffe9df;
-        color: var(--accent-2);
+      .stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+      }
+
+      .tag {
+        border-radius: 999px;
+        padding: 0.12rem 0.42rem;
         font-size: 0.72rem;
+        background: rgba(255, 255, 255, 0.85);
+        border: 1px solid var(--tcp-border);
+      }
+
+      .tag.turbo {
+        border-color: #9ec9d8;
+        background: #edf7fa;
+      }
+
+      .config-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-size: 0.8rem;
+      }
+
+      .config-list li {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.6rem;
+        padding: 0.24rem 0;
+        border-bottom: 1px dashed rgba(0, 0, 0, 0.07);
+      }
+
+      .config-list li:last-child {
+        border-bottom: none;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.82rem;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        text-align: left;
+        padding: 0.38rem 0.2rem;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 0.76rem;
+      }
+
+      .btn {
+        border-radius: 7px;
+        padding: 0.28rem 0.6rem;
+        font-size: 0.78rem;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      .column.tcp .btn {
+        border: 1px solid var(--tcp-accent);
+        color: var(--tcp-accent);
+      }
+
+      .column.tcp .btn:hover {
+        background: #e4f4fa;
+      }
+
+      .column.ws .btn {
+        border: 1px solid var(--ws-accent);
+        color: var(--ws-accent);
+      }
+
+      .column.ws .btn:hover {
+        background: #ede8f8;
+      }
+
+      .footer {
+        margin-top: 0.55rem;
+        display: flex;
+        justify-content: flex-end;
+        padding: 0 0.15rem;
+      }
+
+      .footer .btn {
+        border: 1px solid var(--line);
+        color: var(--ink);
       }
     </style>
   </head>
   <body>
     <main class="wrap">
-      <h1>Transit Signal Stream</h1>
-      <div class="status">
-        <span id="dot" class="dot"></span>
-        <strong id="statusText">Connecting...</strong>
+      <div class="topbar">
+        <h1>Transit Bridge</h1>
+        <button id="refreshNow" class="btn" type="button">Refresh</button>
       </div>
-      <a class="statusLink" href="/status">Open Status Dashboard</a>
 
-      <section class="grid">
-        <article class="card">
-          <h2>Bridge Info</h2>
-          <ul class="meta">
-            <li><strong>Endpoint:</strong> <span id="endpoint">-</span></li>
-            <li><strong>Topics:</strong> <span id="topics">-</span></li>
-            <li><strong>Events received:</strong> <span id="count">0</span></li>
-          </ul>
-        </article>
+      <section class="split">
+        <!-- LEFT: TCP / ZMQ -->
+        <div class="column tcp">
+          <div class="column-head">
+            <h2 class="column-title">TCP / ZeroMQ</h2>
+            <div id="tcpSummary" class="summary-strip"></div>
+          </div>
 
-        <article class="card">
-          <h2>Live Feed</h2>
-          <div id="log" class="log"></div>
-        </article>
+          <article class="card">
+            <h2 style="margin-bottom: 0.45rem">Data feeds</h2>
+            <div id="feedsPanel"></div>
+          </article>
+
+          <article class="card feed-card">
+            <div class="card-head">
+              <h2>Live messages</h2>
+              <div class="tools">
+                <span id="msgCount" class="chip">0 shown</span>
+                <button id="clearMsgs" class="btn" type="button">Clear</button>
+              </div>
+            </div>
+            <p class="small">BISON + KV78Turbo for configured stops.</p>
+            <div id="msgFeed" class="msgFeed">
+              <div class="emptyMsg">Waiting for incoming TCP messages...</div>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2 style="margin-bottom: 0.4rem">Configuration</h2>
+            <ul id="configList" class="config-list"></ul>
+          </article>
+        </div>
+
+        <!-- RIGHT: WebSocket -->
+        <div class="column ws">
+          <div class="column-head">
+            <h2 class="column-title">WebSocket</h2>
+            <div id="wsSummary" class="summary-strip"></div>
+          </div>
+
+          <article class="card">
+            <div class="card-head">
+              <h2>Connection</h2>
+              <span id="wsLiveState" class="chip">WS: connecting</span>
+            </div>
+            <p class="small">Dashboard listens on the control channel.</p>
+          </article>
+
+          <article class="card feed-card">
+            <div class="card-head">
+              <h2>Content broadcasts</h2>
+              <div class="tools">
+                <span id="wsEventCount" class="chip">0 shown</span>
+                <button id="clearWsEvents" class="btn" type="button">Clear</button>
+              </div>
+            </div>
+            <p class="small">Commands sent to display clients.</p>
+            <div id="wsEventFeed" class="msgFeed">
+              <div class="emptyMsg">Waiting for broadcast activity...</div>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2 style="margin-bottom: 0.4rem">Connected clients</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Up</th>
+                  <th>Sent</th>
+                </tr>
+              </thead>
+              <tbody id="clientsBody"></tbody>
+            </table>
+          </article>
+        </div>
       </section>
     </main>
 
     <script>
-      const statusText = document.getElementById("statusText");
-      const dot = document.getElementById("dot");
-      const endpointEl = document.getElementById("endpoint");
-      const topicsEl = document.getElementById("topics");
-      const countEl = document.getElementById("count");
-      const logEl = document.getElementById("log");
+      const el = {
+        tcpSummary: document.getElementById("tcpSummary"),
+        wsSummary: document.getElementById("wsSummary"),
+        feedsPanel: document.getElementById("feedsPanel"),
+        configList: document.getElementById("configList"),
+        clientsBody: document.getElementById("clientsBody"),
+        refreshNow: document.getElementById("refreshNow"),
+        wsLiveState: document.getElementById("wsLiveState"),
+        msgFeed: document.getElementById("msgFeed"),
+        msgCount: document.getElementById("msgCount"),
+        clearMsgs: document.getElementById("clearMsgs"),
+        wsEventFeed: document.getElementById("wsEventFeed"),
+        wsEventCount: document.getElementById("wsEventCount"),
+        clearWsEvents: document.getElementById("clearWsEvents"),
+      };
 
-      let count = 0;
-      const ws = new WebSocket(`ws://${location.host}/content`);
+      let shownMessages = 0;
+      let shownWsEvents = 0;
+      let refreshDebounce = null;
+      let dataStartedAt = "-";
+      const maxRows = 14;
 
-      function setLive(isLive, text) {
-        dot.classList.toggle("live", isLive);
-        statusText.textContent = text;
+      function humanSeconds(v) {
+        if (v === null || v === undefined) return "-";
+        if (v < 60) return `${v}s`;
+        const m = Math.floor(v / 60);
+        const s = v % 60;
+        return `${m}m ${s}s`;
       }
 
-      function addEvent(event) {
-        const row = document.createElement("div");
-        row.className = "event";
+      function stateClass(state) {
+        if (state === "connected") return "ok";
+        if (state === "error") return "bad";
+        if (state === "disabled") return "warn";
+        return "warn";
+      }
 
-        const header = document.createElement("h3");
-        header.textContent = event.topic || event.type;
-
-        if (event.payloadBytes) {
-          const badge = document.createElement("span");
-          badge.className = "badge";
-          badge.textContent = `${event.payloadBytes} bytes`;
-          header.appendChild(badge);
+      function renderTags(topics, turbo = false) {
+        if (!Array.isArray(topics) || topics.length === 0) {
+          return '<span class="tag">none</span>';
         }
 
-        const meta = document.createElement("p");
-        meta.textContent =
-          event.receivedAt || event.serverTime || new Date().toISOString();
-
-        const body = document.createElement("pre");
-        const snippet =
-          event.payloadText && event.payloadText.length > 2000
-            ? `${event.payloadText.slice(0, 2000)}\n... [truncated in UI]`
-            : event.payloadText || JSON.stringify(event, null, 2);
-        body.textContent = snippet;
-
-        row.appendChild(header);
-        row.appendChild(meta);
-        row.appendChild(body);
-
-        logEl.prepend(row);
+        return topics
+          .map(
+            (topic) =>
+              `<span class="tag mono${turbo ? " turbo" : ""}">${topic}</span>`,
+          )
+          .join("");
       }
 
-      ws.addEventListener("open", () => {
-        setLive(true, "Connected");
-      });
+      function renderFeeds(zmq) {
+        const bisonState = zmq?.state || "unknown";
+        const turbo = zmq?.turbo || {};
+        const turboState = turbo.enabled ? turbo.state || "unknown" : "disabled";
 
-      ws.addEventListener("close", () => {
-        setLive(false, "Disconnected");
-      });
+        el.feedsPanel.innerHTML = `
+          <div class="feed-block">
+            <div class="feed-title">BISON (KV6/KV17)</div>
+            <div class="pill"><span class="dot ${stateClass(bisonState)}"></span><strong>${bisonState}</strong></div>
+            <div class="mono" style="margin: 0.3rem 0">${zmq?.endpoint || "-"}</div>
+            <div class="stack">${renderTags(zmq?.topics || [])}</div>
+          </div>
+          <div class="feed-block">
+            <div class="feed-title">KV78Turbo (forecasts)</div>
+            <div class="pill"><span class="dot ${stateClass(turboState)}"></span><strong>${turboState}</strong></div>
+            <div class="mono" style="margin: 0.3rem 0">${turbo.endpoint || "-"}</div>
+            <div class="stack">${renderTags(turbo.topics || [], true)}</div>
+            <div class="stack" style="margin-top: 0.35rem">
+              <span class="pill">Relevant <strong>${turbo.relevantMessages || 0}</strong></span>
+              <span class="pill">Ignored <strong>${turbo.ignoredMessages || 0}</strong></span>
+              <span class="pill">Last <strong>${humanSeconds(turbo.secondsSinceLastMessage)}</strong></span>
+            </div>
+          </div>
+        `;
+      }
 
-      ws.addEventListener("error", () => {
-        setLive(false, "Connection error");
-      });
+      function renderSummaries(data) {
+        const zmq = data?.zmq || {};
+        const ws = data?.websocket || {};
+        const stops = (zmq.userstopcodes || []).join(", ") || "all";
 
-      ws.addEventListener("message", (message) => {
-        try {
-          const data = JSON.parse(message.data);
+        el.tcpSummary.innerHTML = `
+          <span class="pill"><span class="dot ${stateClass(zmq.state)}"></span> BISON <strong>${zmq.state || "?"}</strong></span>
+          <span class="pill"><span class="dot ${stateClass(zmq.turbo?.state)}"></span> Turbo <strong>${zmq.turbo?.enabled ? zmq.turbo?.state : "off"}</strong></span>
+          <span class="pill">BISON rel. <strong>${zmq.relevantMessages || 0}</strong></span>
+          <span class="pill">Turbo rel. <strong>${zmq.turbo?.relevantMessages || 0}</strong></span>
+          <span class="pill">Last BISON <strong>${humanSeconds(zmq.secondsSinceLastMessage)}</strong></span>
+        `;
 
-          if (data.type === "bridge-status") {
-            endpointEl.textContent = data.endpoint || "-";
-            topicsEl.textContent = Array.isArray(data.topics)
-              ? data.topics.join(", ")
-              : "-";
-            addEvent(data);
+        el.wsSummary.innerHTML = `
+          <span class="pill">Content <strong>${ws.contentConnected || 0}</strong></span>
+          <span class="pill">Control <strong>${ws.controlConnected || 0}</strong></span>
+          <span class="pill">Sent <strong>${ws.contentMessagesSent || 0}</strong></span>
+          <span class="pill">Stop <strong>${stops}</strong></span>
+        `;
+      }
+
+      function renderConfig(config, zmq) {
+        const items = [
+          ["Stop filter", (zmq.userstopcodes || []).join(", ") || "all"],
+          ["Topic prefix", config?.rotterdamTopicPrefix || "-"],
+          ["No-train initial", `${config?.noTrainInitialDelayMs || "-"} ms`],
+          ["No-train after depart", `${config?.noTrainAfterDepartureMs || "-"} ms`],
+          ["Max payload", config?.maxPayloadBytes || "-"],
+          ["WS ping", `${config?.wsPingIntervalMs || "-"} ms`],
+          ["Started", dataStartedAt || "-"],
+          ["Last error", zmq.lastError ? zmq.lastError.message : "none"],
+        ];
+
+        el.configList.innerHTML = items
+          .map(
+            ([label, value]) =>
+              `<li><span>${label}</span><span class="mono">${value}</span></li>`,
+          )
+          .join("");
+      }
+
+      function renderClients(clients) {
+        el.clientsBody.innerHTML = "";
+
+        if (!Array.isArray(clients) || clients.length === 0) {
+          const row = document.createElement("tr");
+          row.innerHTML =
+            '<td colspan="3" class="small">No content clients connected.</td>';
+          el.clientsBody.appendChild(row);
+          return;
+        }
+
+        for (const client of clients) {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td class="mono">${client.id?.slice(0, 8) || "-"}…</td>
+            <td>${humanSeconds(client.secondsConnected)}</td>
+            <td>${Number(client.sentCount || 0)}</td>
+          `;
+          el.clientsBody.appendChild(row);
+        }
+      }
+
+      function trimPayload(payloadText) {
+        if (!payloadText) return "";
+        if (payloadText.length <= 1400) return payloadText;
+        return `${payloadText.slice(0, 1400)}\n... [truncated]`;
+      }
+
+      function trimJson(value) {
+        return trimPayload(JSON.stringify(value || {}, null, 2));
+      }
+
+      function addMessageRow(message) {
+        const empty = el.msgFeed.querySelector(".emptyMsg");
+        if (empty) empty.remove();
+
+        const row = document.createElement("div");
+        row.className = "msgRow";
+        const source = message.source ? `[${message.source}] ` : "";
+        row.innerHTML = `
+          <div class="msgTop">
+            <div class="msgTopic mono">${source}${message.topic || "(no topic)"}</div>
+            <div class="msgMeta">${new Date(message.receivedAt || Date.now()).toLocaleTimeString()}</div>
+          </div>
+          <div class="msgPayload mono">${trimPayload(message.payloadPreview || message.payloadText || "")}</div>
+        `;
+
+        el.msgFeed.prepend(row);
+        while (el.msgFeed.children.length > maxRows) {
+          el.msgFeed.removeChild(el.msgFeed.lastChild);
+        }
+
+        shownMessages = Math.min(shownMessages + 1, maxRows);
+        el.msgCount.textContent = `${shownMessages} shown`;
+      }
+
+      function addCommandRow(message) {
+        const empty = el.msgFeed.querySelector(".emptyMsg");
+        if (empty) empty.remove();
+
+        const row = document.createElement("div");
+        row.className = "msgRow";
+        row.innerHTML = `
+          <div class="msgTop">
+            <div class="msgTopic mono">${message.command || "COMMAND"}</div>
+            <div class="msgMeta">${new Date(message.receivedAt || Date.now()).toLocaleTimeString()}</div>
+          </div>
+          <div class="msgPayload mono">${trimJson(message)}</div>
+        `;
+
+        el.msgFeed.prepend(row);
+        while (el.msgFeed.children.length > maxRows) {
+          el.msgFeed.removeChild(el.msgFeed.lastChild);
+        }
+
+        shownMessages = Math.min(shownMessages + 1, maxRows);
+        el.msgCount.textContent = `${shownMessages} shown`;
+      }
+
+      function addWsEventRow(message) {
+        const empty = el.wsEventFeed.querySelector(".emptyMsg");
+        if (empty) empty.remove();
+
+        const payloadCommand = message?.payload?.command;
+        const title =
+          message.event === "broadcast" && payloadCommand
+            ? payloadCommand
+            : message.event || "ws-event";
+
+        const row = document.createElement("div");
+        row.className = "msgRow";
+        row.innerHTML = `
+          <div class="msgTop">
+            <div class="msgTopic mono">${title}</div>
+            <div class="msgMeta">${new Date(message.at || Date.now()).toLocaleTimeString()}</div>
+          </div>
+          <div class="msgEvent">${message.recipients !== undefined ? `recipients: ${message.recipients}` : ""}</div>
+          <div class="msgPayload mono">${message.event === "broadcast" && message.payload ? trimJson(message.payload) : trimJson(message)}</div>
+        `;
+
+        el.wsEventFeed.prepend(row);
+        while (el.wsEventFeed.children.length > maxRows) {
+          el.wsEventFeed.removeChild(el.wsEventFeed.lastChild);
+        }
+
+        shownWsEvents = Math.min(shownWsEvents + 1, maxRows);
+        el.wsEventCount.textContent = `${shownWsEvents} shown`;
+      }
+
+      function setWsLiveState(connected) {
+        el.wsLiveState.className = connected ? "chip live" : "chip";
+        el.wsLiveState.textContent = connected ? "WS: live" : "WS: reconnecting";
+      }
+
+      function scheduleRefreshSoon() {
+        if (refreshDebounce) return;
+        refreshDebounce = setTimeout(() => {
+          refreshDebounce = null;
+          refreshStatus();
+        }, 700);
+      }
+
+      function connectLiveFeed() {
+        const protocol = location.protocol === "https:" ? "wss" : "ws";
+        const ws = new WebSocket(`${protocol}://${location.host}/control`);
+
+        ws.addEventListener("open", () => setWsLiveState(true));
+        ws.addEventListener("close", () => {
+          setWsLiveState(false);
+          setTimeout(connectLiveFeed, 1200);
+        });
+        ws.addEventListener("error", () => setWsLiveState(false));
+
+        ws.addEventListener("message", (event) => {
+          let data;
+          try {
+            data = JSON.parse(event.data);
+          } catch {
             return;
           }
 
           if (data.type === "transit-update") {
-            count += 1;
-            countEl.textContent = String(count);
-            addEvent(data);
+            addMessageRow(data);
+            scheduleRefreshSoon();
             return;
           }
 
-          addEvent(data);
-        } catch (error) {
-          addEvent({
-            type: "parse-error",
-            payloadText: String(message.data),
-            receivedAt: new Date().toISOString(),
-          });
+          if (data.type === "transit-command") {
+            addCommandRow(data);
+            scheduleRefreshSoon();
+            return;
+          }
+
+          if (data.type === "ws-event") {
+            if (data.channel && data.channel !== "content") return;
+            addWsEventRow(data);
+          }
+        });
+      }
+
+      async function refreshStatus() {
+        try {
+          const response = await fetch("/api/status", { cache: "no-store" });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+          const data = await response.json();
+          dataStartedAt = data?.startedAt || "-";
+
+          renderSummaries(data);
+          renderFeeds(data?.zmq || {});
+          renderConfig(data?.config || {}, data?.zmq || {});
+
+          const wsData = data?.websocket || {};
+          const contentClients = Array.isArray(wsData.contentClients)
+            ? wsData.contentClients
+            : (wsData.clients || []).filter(
+                (client) => !client.channel || client.channel === "content",
+              );
+          renderClients(contentClients);
+        } catch {
+          el.tcpSummary.innerHTML =
+            '<span class="pill"><span class="dot bad"></span> Status fetch failed</span>';
         }
+      }
+
+      el.refreshNow.addEventListener("click", refreshStatus);
+      el.clearMsgs.addEventListener("click", () => {
+        shownMessages = 0;
+        el.msgCount.textContent = "0 shown";
+        el.msgFeed.innerHTML =
+          '<div class="emptyMsg">Waiting for incoming TCP messages...</div>';
       });
+      el.clearWsEvents.addEventListener("click", () => {
+        shownWsEvents = 0;
+        el.wsEventCount.textContent = "0 shown";
+        el.wsEventFeed.innerHTML =
+          '<div class="emptyMsg">Waiting for broadcast activity...</div>';
+      });
+
+      refreshStatus();
+      connectLiveFeed();
+      setInterval(refreshStatus, 5000);
     </script>
   </body>
 </html>

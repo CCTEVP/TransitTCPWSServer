@@ -7,8 +7,9 @@ This project bridges GOVI/NDOV realtime ZeroMQ feeds to browser clients over Web
 - Connects to an external ZeroMQ TCP feed (example: `tcp://pubsub.besteffort.ndovloket.nl:7658`)
 - Subscribes to one or more topic prefixes (example: `/RIG/KV15messages,/RIG/KV17cvlinfo,/RIG/KV6posinfo`)
 - Broadcasts only derived RET state commands to connected content WebSocket clients
-- Serves a demo HTML client at `/`
-- Serves a status dashboard at `/status` and status JSON at `/api/status`
+- Serves the status dashboard at `/` (legacy `/status` and `/dashboard/status` redirect here)
+- Serves the display client at `/content`
+- Serves status JSON at `/api/status`
 
 ## Source specs used
 
@@ -42,9 +43,10 @@ copy .env.example .env
 npm start
 ```
 
-5. Open client:
+5. Open:
 
-- http://localhost:8080
+- Status dashboard: http://localhost:8080
+- Display client: http://localhost:8080/content
 
 ## Environment variables
 
@@ -56,7 +58,8 @@ npm start
 
 ## Status and monitoring
 
-- Status page: `http://localhost:8080/status`
+- Status page: `http://localhost:8080`
+- Display client: `http://localhost:8080/content`
 - Status API: `http://localhost:8080/api/status`
 
 The status API includes:

@@ -62,13 +62,20 @@ let departureNoTrainTimer = null;
 const arrivingTimers = new Map();
 
 const app = express();
-app.use(express.static(path.join(__dirname, "..", "public")));
-app.get("/status", (req, res) => {
-  res.sendFile(path.join(__dirname, "..", "public", "status.html"));
+const publicDir = path.join(__dirname, "..", "public");
+const contentDir = path.join(publicDir, "content");
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(publicDir, "index.html"));
 });
-app.get("/dashboard/status", (req, res) => {
-  res.sendFile(path.join(__dirname, "..", "public", "status.html"));
+app.get(["/status", "/dashboard/status"], (req, res) => {
+  res.redirect(301, "/");
 });
+app.get(["/content", "/content/"], (req, res) => {
+  res.sendFile(path.join(contentDir, "index.html"));
+});
+app.use("/content", express.static(contentDir));
+app.use(express.static(publicDir));
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
