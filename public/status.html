@@ -534,18 +534,6 @@
         vertical-align: middle;
       }
 
-      .upcoming-table .badge-cached {
-        display: inline-block;
-        margin-left: 0.35rem;
-        padding: 0.05rem 0.35rem;
-        border-radius: 999px;
-        font-size: 0.62rem;
-        font-weight: 700;
-        color: #7a5b00;
-        background: #ffe6a8;
-        vertical-align: middle;
-      }
-
       .upcoming-table .badge-status {
         display: inline-block;
         padding: 0.12rem 0.45rem;
@@ -969,22 +957,21 @@
           return;
         }
 
-        const goviLive = rows.some((vehicle) => vehicle.goviLive);
         const body = rows
           .map((vehicle) => {
             const nearestClass = vehicle.isNearest ? "nearest" : "";
             const nearestBadge = vehicle.isNearest
               ? '<span class="badge-nearest">nearest</span>'
               : "";
-            const cachedBadge =
-              !goviLive || vehicle.cached
-                ? '<span class="badge-cached">cached</span>'
-                : "";
+            const lineLabel =
+              vehicle.lineLabel ||
+              vehicle.lineplanningnumber ||
+              "—";
             return `
               <tr class="${nearestClass}">
                 <td>${vehicle.rank || ""}</td>
-                <td><strong>${vehicle.vehiclenumber || "—"}</strong>${nearestBadge}${cachedBadge}</td>
-                <td>${vehicle.lineplanningnumber || "—"}</td>
+                <td><strong>${vehicle.vehiclenumber || "—"}</strong>${nearestBadge}</td>
+                <td>${lineLabel}</td>
                 <td class="eta">${formatEta(vehicle.etaSeconds)}</td>
                 <td>${vehicle.expectedArrivalTime || "—"}</td>
                 <td>${statusBadge(vehicle.status || vehicle.tripStatus)}</td>
@@ -993,6 +980,7 @@
           })
           .join("");
 
+        const goviLive = rows.some((vehicle) => vehicle.goviLive);
         const cacheNote = !goviLive
           ? `<div class="emptyMsg" style="border-bottom:1px solid rgba(0,0,0,.06)">GOVI standby — counting down from last ExpectedArrivalTime</div>`
           : "";

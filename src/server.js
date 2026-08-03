@@ -60,6 +60,14 @@ const USERSTOPCODES = envList("USERSTOPCODES").map((code) => code.toLowerCase())
 const LINEPLANNINGNUMBERS = envList("LINEPLANNINGNUMBERS").map((code) =>
   String(code).toLowerCase(),
 );
+// RET metro LinePlanningNumber → public letter (Beurs A–E).
+const RET_METRO_LINE_LETTERS = {
+  1682: "A",
+  1683: "B",
+  1684: "C",
+  1702: "D",
+  1704: "E",
+};
 // GOVI/BISON wall-clock times are Dutch local time, not the server TZ (UTC on Cloud Run).
 const TRANSIT_TIMEZONE =
   process.env.TRANSIT_TIMEZONE || "Europe/Amsterdam";
@@ -621,6 +629,10 @@ function extractEntity(node) {
   return {
     dataownercode: getRowValue(node, "dataownercode"),
     lineplanningnumber: getRowValue(node, "lineplanningnumber"),
+    linepublicnumber: getRowValue(node, [
+      "linepublicnumber",
+      "linepublicnummer",
+    ]),
     operatingday: getRowValue(node, [
       "operatingday",
       "operatingdate",
@@ -1331,6 +1343,7 @@ function handleForecastUpdate(topic, row, receivedAt) {
     expectedArrivalTime: getRowValue(row, "expectedarrivaltime") || null,
     vehiclenumber: entity.vehiclenumber || null,
     lineplanningnumber: entity.lineplanningnumber || null,
+    linepublicnumber: entity.linepublicnumber || null,
     journeynumber: entity.journeynumber || null,
     dataownercode: entity.dataownercode || null,
     entity,
@@ -1403,6 +1416,19 @@ function isGoviFeedLive() {
 
 function displayStatusForUpcoming(entry) {
   return entry?.displayStatus || "Driving";
+}
+
+function formatUpcomingLineLabel(lineplanningnumber, linepublicnumber) {
+  const planning = String(lineplanningnumber || "").trim();
+  const fromFeed = String(linepublicnumber || "").trim();
+  const letter =
+    (/^[A-Za-z]$/.test(fromFeed) ? fromFeed.toUpperCase() : null) ||
+    RET_METRO_LINE_LETTERS[planning] ||
+    null;
+  if (letter && planning) {
+    return `${letter} (${planning})`;
+  }
+  return letter || planning || null;
 }
 
 function lifecycleSortRank(entry) {
@@ -1527,6 +1553,11 @@ function getUpcomingVehiclesSnapshot() {
         stopCode: entry.stopCode,
         vehiclenumber: entry.vehiclenumber,
         lineplanningnumber: entry.lineplanningnumber,
+        linepublicnumber: entry.linepublicnumber || null,
+        lineLabel: formatUpcomingLineLabel(
+          entry.lineplanningnumber,
+          entry.linepublicnumber,
+        ),
         journeynumber: entry.journeynumber,
         journeyKey: entry.journeyKey,
         tripStatus: entry.tripStatus || null,
@@ -1631,6 +1662,10 @@ function updateUpcomingFromRetCommand(commandMessage) {
     lineplanningnumber:
       commandMessage?.entity?.lineplanningnumber ||
       existing.lineplanningnumber ||
+      null,
+    linepublicnumber:
+      commandMessage?.entity?.linepublicnumber ||
+      existing.linepublicnumber ||
       null,
     journeynumber:
       commandMessage?.entity?.journeynumber || existing.journeynumber || null,
