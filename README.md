@@ -70,32 +70,29 @@ The status API includes:
 
 ## Message shape sent to browser
 
-The feed payload can be gzip-compressed XML. The server decodes and parses it,
-then emits command-oriented events:
+**Content channel** (`/content`) commands are minimal — display clients only need
+`type` and `command`. `vehiclenumber` is included when known for deduplication:
 
 ```json
 {
   "type": "transit-command",
-  "protocol": "KV6",
-  "command": "KV6_ONROUTE",
-  "topic": "/ARR/KV6posinfo",
+  "protocol": "RET",
+  "command": "RET_TRAIN_ARRIVED",
   "receivedAt": "2026-07-23T10:00:00.000Z",
-  "entity": {
-    "dataownercode": "ARR",
-    "lineplanningnumber": "...",
-    "journeynumber": "...",
-    "vehiclenumber": "..."
-  },
-  "data": {}
+  "vehiclenumber": "2142"
 }
 ```
 
+**Control channel** (dashboard TCP activity) still receives full command payloads
+including `entity` and `data`, plus `transit-update` feed rows.
+
 For Rotterdam topics (`/RIG/`), only these derived train-state commands
-are broadcast as standard `transit-command` payloads (`protocol: "RET"`):
+are broadcast (`protocol: "RET"`):
 
 - `RET_NO_TRAIN`
 - `RET_TRAIN_ARRIVING_15S`
 - `RET_TRAIN_ARRIVED`
+- `RET_TRAIN_DEPARTED`
 
 ## Notes
 

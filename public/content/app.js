@@ -183,20 +183,25 @@ function playCommand(command) {
 }
 
 function onPlaybackFinished() {
-  if (currentCommand === "RET_NO_TRAIN" && isInitialNoTrain) {
+  const finishedCommand = currentCommand;
+
+  if (finishedCommand === "RET_NO_TRAIN" && isInitialNoTrain) {
     isInitialNoTrain = false;
   }
 
   isPlaying = false;
   currentCommand = null;
 
-  if (!queuedCommand) {
+  if (queuedCommand) {
+    const nextCommand = queuedCommand;
+    queuedCommand = null;
+    playCommand(nextCommand);
     return;
   }
 
-  const nextCommand = queuedCommand;
-  queuedCommand = null;
-  playCommand(nextCommand);
+  if (finishedCommand === "RET_TRAIN_DEPARTED") {
+    playCommand("RET_NO_TRAIN");
+  }
 }
 
 function resetHeartbeat() {

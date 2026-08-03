@@ -39,6 +39,12 @@ const ZMQ_TURBO_TOPICS = envList(
   "/GOVI/KV8passtimes/RET",
 );
 const ZMQ_TURBO_ENABLED = envBool("ZMQ_TURBO_ENABLED", true);
+const ZMQ_TURBO_ON_DEMAND = envBool("ZMQ_TURBO_ON_DEMAND", true);
+const ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS = Number(
+  process.env.ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS || 60000,
+);
+// Emit RET_TRAIN_ARRIVING_15S only when forecast ETA is at/below this (seconds).
+const ARRIVING_ETA_SEC = Number(process.env.ARRIVING_ETA_SEC || 15);
 const MAX_PAYLOAD_BYTES = Number(process.env.MAX_PAYLOAD_BYTES || 200000);
 const WS_CHANNEL_CONTROL = "control";
 const WS_CHANNEL_CONTENT = "content";
@@ -59,7 +65,11 @@ const ALLOWED_RET_COMMANDS = new Set([
 ]);
 let initialNoTrainSent = false;
 let departureNoTrainTimer = null;
+let bisonSubscribed = false;
+let turboSubscribed = false;
+let feedPhase = "rig"; // rig | govi | arriving
 const arrivingTimers = new Map();
+const arrivedCountdownTimers = new Map();
 
 const app = express();
 const publicDir = path.join(__dirname, "..", "public");
@@ -90,6 +100,10 @@ const xmlParser = new XMLParser({
 const subscriber = new zmq.Subscriber();
 const turboSubscriber = new zmq.Subscriber();
 const wsClientMeta = new Map();
+const lastBroadcastKeyByChannel = {
+  [WS_CHANNEL_CONTENT]: null,
+  [WS_CHANNEL_CONTROL]: null,
+};
 
 const bridgeStatus = {
   startedAt: new Date().toISOString(),
@@ -97,18 +111,29 @@ const bridgeStatus = {
     endpoint: ZMQ_ENDPOINT,
     topics: ZMQ_TOPICS,
     state: "initializing",
+    subscribed: false,
     connectedAt: null,
+    lastSubscribeAt: null,
+    lastUnsubscribeAt: null,
+    feedPhase: "rig",
     turbo: {
       enabled: ZMQ_TURBO_ENABLED,
+      onDemand: ZMQ_TURBO_ON_DEMAND,
+      idleUnsubscribeMs: ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS,
       endpoint: ZMQ_TURBO_ENDPOINT,
       topics: ZMQ_TURBO_TOPICS,
       state: ZMQ_TURBO_ENABLED ? "initializing" : "disabled",
+      subscribed: false,
       connectedAt: null,
       lastMessageAt: null,
+      lastSubscribeAt: null,
+      lastUnsubscribeAt: null,
       totalMessages: 0,
       droppedMessages: 0,
       ignoredMessages: 0,
       relevantMessages: 0,
+      bytesReceived: 0,
+      bytesRelevant: 0,
       lastError: null,
     },
     lastMessageAt: null,
@@ -116,8 +141,14 @@ const bridgeStatus = {
     droppedMessages: 0,
     ignoredMessages: 0,
     relevantMessages: 0,
+    bytesReceived: 0,
+    bytesRelevant: 0,
     lastError: null,
     userstopcodes: USERSTOPCODES,
+  },
+  websocket: {
+    contentBytesSent: 0,
+    controlBytesSent: 0,
   },
   config: {
     rotterdamTopicPrefix: ROTTERDAM_TOPIC_PREFIX,
@@ -126,6 +157,8 @@ const bridgeStatus = {
     maxPayloadBytes: MAX_PAYLOAD_BYTES,
     wsPingIntervalMs: WS_PING_INTERVAL_MS,
     turboEnabled: ZMQ_TURBO_ENABLED,
+    turboOnDemand: ZMQ_TURBO_ON_DEMAND,
+    turboIdleUnsubscribeMs: ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS,
   },
 };
 
@@ -158,6 +191,99 @@ function normalizeWsChannel(urlPath) {
   return "unknown";
 }
 
+function getVehicleNumberFromMessage(obj) {
+  if (!obj || typeof obj !== "object") {
+    return "";
+  }
+
+  return String(
+    obj.vehiclenumber ||
+      obj.entity?.vehiclenumber ||
+      obj.data?.vehiclenumber ||
+      obj.payload?.vehiclenumber ||
+      obj.payload?.entity?.vehiclenumber ||
+      obj.payload?.data?.vehiclenumber ||
+      "",
+  );
+}
+
+function toClientCommandMessage(commandMessage) {
+  const vehiclenumber = getVehicleNumberFromMessage(commandMessage);
+
+  const message = {
+    type: "transit-command",
+    protocol: commandMessage.protocol || "RET",
+    command: commandMessage.command,
+    receivedAt: commandMessage.receivedAt || new Date().toISOString(),
+  };
+
+  if (vehiclenumber) {
+    message.vehiclenumber = vehiclenumber;
+  }
+
+  return message;
+}
+
+function getBroadcastDedupeKey(obj) {
+  if (!obj || typeof obj !== "object") {
+    return null;
+  }
+
+  const type = String(obj.type || "");
+
+  if (type === "transit-command") {
+    return `cmd|${obj.command || ""}|${getVehicleNumberFromMessage(obj)}`;
+  }
+
+  if (type === "ws-event" && obj.event === "broadcast" && obj.payload) {
+    return `broadcast|${obj.payload.command || ""}|${getVehicleNumberFromMessage(obj.payload)}`;
+  }
+
+  if (type === "ws-event") {
+    return `ws-event|${obj.event || ""}|${obj.channel || ""}|${obj.clientId || ""}`;
+  }
+
+  if (type === "transit-update") {
+    const rows = Array.isArray(obj.matchingRows) ? obj.matchingRows : [];
+    const vehicles = rows
+      .map(
+        (row) =>
+          row?.entity?.vehiclenumber ||
+          row?.data?.vehiclenumber ||
+          "",
+      )
+      .filter(Boolean)
+      .sort()
+      .join(",");
+    const commands = rows
+      .map((row) => row?.sourceCommand || "")
+      .filter(Boolean)
+      .sort()
+      .join(",");
+    return `update|${obj.source || ""}|${obj.topic || ""}|${obj.matchingRowCount || 0}|${commands}|${vehicles}`;
+  }
+
+  if (type === "bridge-status") {
+    return `bridge-status|${obj.status || ""}|${obj.channel || ""}|${obj.clientId || ""}`;
+  }
+
+  return `${type}|${JSON.stringify(obj)}`;
+}
+
+function shouldSkipDuplicateBroadcast(channel, obj) {
+  const key = getBroadcastDedupeKey(obj);
+  if (!key) {
+    return false;
+  }
+
+  if (lastBroadcastKeyByChannel[channel] === key) {
+    return true;
+  }
+
+  lastBroadcastKeyByChannel[channel] = key;
+  return false;
+}
+
 function sendWsMessage(client, message) {
   if (client.readyState !== WebSocket.OPEN) {
     return false;
@@ -165,10 +291,18 @@ function sendWsMessage(client, message) {
 
   client.send(message);
 
+  const bytes = Buffer.byteLength(message, "utf8");
   const meta = wsClientMeta.get(client);
   if (meta) {
     meta.lastSentAt = new Date().toISOString();
     meta.sentCount = (meta.sentCount || 0) + 1;
+    meta.sentBytes = (meta.sentBytes || 0) + bytes;
+
+    if (meta.channel === WS_CHANNEL_CONTENT) {
+      bridgeStatus.websocket.contentBytesSent += bytes;
+    } else if (meta.channel === WS_CHANNEL_CONTROL) {
+      bridgeStatus.websocket.controlBytesSent += bytes;
+    }
   }
 
   return true;
@@ -199,6 +333,10 @@ function emitWsEvent(event, details) {
     ...details,
   };
 
+  if (shouldSkipDuplicateBroadcast(WS_CHANNEL_CONTROL, payload)) {
+    return 0;
+  }
+
   const message = JSON.stringify(payload);
   return broadcastChannelMessage(WS_CHANNEL_CONTROL, message);
 }
@@ -218,6 +356,7 @@ function summarizeWsClients() {
       lastSentAt: meta.lastSentAt,
       secondsSinceLastSent: secondsSince(meta.lastSentAt),
       sentCount: meta.sentCount || 0,
+      sentBytes: meta.sentBytes || 0,
       remoteAddress: meta.remoteAddress,
     };
 
@@ -252,6 +391,11 @@ function summarizeWsClients() {
     unknownConnected: unknownClients.length,
     contentMessagesSent,
     controlMessagesSent,
+    contentBytesSent: bridgeStatus.websocket.contentBytesSent,
+    controlBytesSent: bridgeStatus.websocket.controlBytesSent,
+    bytesSent:
+      bridgeStatus.websocket.contentBytesSent +
+      bridgeStatus.websocket.controlBytesSent,
     clients,
     contentClients,
     controlClients,
@@ -260,6 +404,11 @@ function summarizeWsClients() {
 }
 
 function getStatusPayload() {
+  const bisonBytes = bridgeStatus.zmq.bytesReceived || 0;
+  const turboBytes = bridgeStatus.zmq.turbo.bytesReceived || 0;
+  const bisonRelevantBytes = bridgeStatus.zmq.bytesRelevant || 0;
+  const turboRelevantBytes = bridgeStatus.zmq.turbo.bytesRelevant || 0;
+
   return {
     service: "transit-tcp-ws-server",
     now: new Date().toISOString(),
@@ -268,10 +417,16 @@ function getStatusPayload() {
     config: bridgeStatus.config,
     zmq: {
       ...bridgeStatus.zmq,
+      bytesReceived: bisonBytes,
+      bytesRelevant: bisonRelevantBytes,
+      inboundBytes: bisonBytes + turboBytes,
+      relevantBytes: bisonRelevantBytes + turboRelevantBytes,
       secondsSinceLastMessage: secondsSince(bridgeStatus.zmq.lastMessageAt),
       secondsSinceConnected: secondsSince(bridgeStatus.zmq.connectedAt),
       turbo: {
         ...bridgeStatus.zmq.turbo,
+        bytesReceived: turboBytes,
+        bytesRelevant: turboRelevantBytes,
         secondsSinceConnected: secondsSince(
           bridgeStatus.zmq.turbo.connectedAt,
         ),
@@ -280,7 +435,11 @@ function getStatusPayload() {
         ),
       },
     },
-    websocket: summarizeWsClients(),
+    websocket: {
+      ...summarizeWsClients(),
+      startedAt: bridgeStatus.startedAt,
+      uptimeSeconds: Math.floor(process.uptime()),
+    },
   };
 }
 
@@ -289,24 +448,38 @@ app.get("/api/status", (req, res) => {
 });
 
 function broadcastJson(obj) {
-  const message = JSON.stringify(obj);
+  const outbound =
+    obj?.type === "transit-command" ? toClientCommandMessage(obj) : obj;
+
+  if (shouldSkipDuplicateBroadcast(WS_CHANNEL_CONTENT, outbound)) {
+    return 0;
+  }
+
+  const message = JSON.stringify(outbound);
   const contentRecipients = broadcastChannelMessage(
     WS_CHANNEL_CONTENT,
     message,
   );
 
-  if (obj?.type !== "ws-event") {
+  if (outbound?.type !== "ws-event") {
     emitWsEvent("broadcast", {
       channel: WS_CHANNEL_CONTENT,
-      messageType: obj?.type || "unknown",
+      messageType: outbound?.type || "unknown",
       recipients: contentRecipients,
       totalRecipients: contentRecipients,
-      payload: obj,
+      payload: outbound,
     });
   }
+
+  return contentRecipients;
 }
 
 function broadcastControlJson(obj) {
+  // Control/TCP dashboard keeps full payloads (entity + data).
+  if (shouldSkipDuplicateBroadcast(WS_CHANNEL_CONTROL, obj)) {
+    return 0;
+  }
+
   const message = JSON.stringify(obj);
   return broadcastChannelMessage(WS_CHANNEL_CONTROL, message);
 }
@@ -326,22 +499,23 @@ wss.on("connection", (socket, request) => {
     connectedAt: new Date().toISOString(),
     lastSentAt: null,
     sentCount: 0,
+    sentBytes: 0,
     remoteAddress,
   });
 
   console.log(`[WS] Client connected (${channel})`);
 
-  socket.send(
-    JSON.stringify({
-      type: "bridge-status",
-      status: "connected",
-      channel,
-      endpoint: ZMQ_ENDPOINT,
-      topics: ZMQ_TOPICS,
-      clientId,
-      serverTime: new Date().toISOString(),
-    }),
-  );
+  const welcome = {
+    type: "bridge-status",
+    status: "connected",
+    channel,
+    endpoint: ZMQ_ENDPOINT,
+    topics: ZMQ_TOPICS,
+    clientId,
+    serverTime: new Date().toISOString(),
+  };
+  socket.send(JSON.stringify(welcome));
+  // Welcome is per-client; do not apply channel-wide broadcast dedupe.
 
   if (isContentChannel(channel)) {
     emitWsEvent("client-connected", {
@@ -612,6 +786,7 @@ function buildRotterdamTrainStateCommands(topic, baseCommands) {
     if (containsNoTrainSignal(row, baseCommand)) {
       if (approachKey) {
         clearArrivingTimer(approachKey);
+        clearArrivedCountdown(approachKey);
       }
       stateCommands.push({
         type: "transit-command",
@@ -629,35 +804,10 @@ function buildRotterdamTrainStateCommands(topic, baseCommands) {
     const isApproachUpdate =
       (protocol === "KV6" || protocol === "KV17") && command.includes("ONROUTE");
 
-    if (
-      isApproachUpdate &&
-      Number.isFinite(etaSeconds) &&
-      etaSeconds > 15
-    ) {
-      scheduleArriving15s(topic, baseCommand, etaSeconds);
-      continue;
-    }
-
-    if (
-      isApproachUpdate &&
-      Number.isFinite(etaSeconds) &&
-      etaSeconds > 0 &&
-      etaSeconds <= 15
-    ) {
-      if (approachKey) {
-        clearArrivingTimer(approachKey);
-      }
-      stateCommands.push({
-        type: "transit-command",
-        protocol: "RET",
-        command: "RET_TRAIN_ARRIVING_15S",
-        topic,
-        receivedAt: baseCommand.receivedAt,
-        sourceCommand: baseCommand.command,
-        etaSeconds,
-        entity: baseCommand.entity,
-        data: row,
-      });
+    if (isApproachUpdate) {
+      // RIG only detects approach; GOVI owns ETA / ARRIVING forecasts.
+      // Keep RIG while a train is already ARRIVED so we still see DEPARTURE.
+      maybeActivateGoviForOnRoute(baseCommand);
       continue;
     }
 
@@ -675,6 +825,7 @@ function buildRotterdamTrainStateCommands(topic, baseCommands) {
     if (isArrived) {
       if (approachKey) {
         clearArrivingTimer(approachKey);
+        clearArrivedCountdown(approachKey);
       }
       stateCommands.push({
         type: "transit-command",
@@ -697,6 +848,7 @@ function buildRotterdamTrainStateCommands(topic, baseCommands) {
     if (isDeparted) {
       if (approachKey) {
         clearArrivingTimer(approachKey);
+        clearArrivedCountdown(approachKey);
       }
       stateCommands.push({
         type: "transit-command",
@@ -823,10 +975,16 @@ function processStopCommand(commandMessage) {
 
   if (command === "RET_TRAIN_ARRIVED") {
     if (
-      current.command === "RET_TRAIN_DEPARTED" &&
-      journeyKey === current.journeyKey
+      journeyKey &&
+      journeyKey === current.journeyKey &&
+      (current.command === "RET_TRAIN_ARRIVED" ||
+        current.command === "RET_TRAIN_DEPARTED")
     ) {
-      return { broadcast: false, scheduleDepartureTimer: false, clearDepartureTimer: false };
+      return {
+        broadcast: false,
+        scheduleDepartureTimer: false,
+        clearDepartureTimer: false,
+      };
     }
 
     stopStates.set(stopCode, { command, journeyKey });
@@ -997,6 +1155,7 @@ function handleForecastUpdate(topic, row, receivedAt) {
   if (tripStatus === "ARRIVED" || tripStatus === "PASSED") {
     if (approachKey) {
       clearArrivingTimer(approachKey);
+      clearArrivedCountdown(approachKey);
     }
     return {
       sourceCommand: "KV8_FORECAST",
@@ -1016,9 +1175,9 @@ function handleForecastUpdate(topic, row, receivedAt) {
     };
   }
 
-  if (etaSeconds > 15) {
-    scheduleArriving15s(topic, baseCommand, etaSeconds);
-  } else if (etaSeconds > 0 && etaSeconds <= 15) {
+  if (etaSeconds > ARRIVING_ETA_SEC) {
+    scheduleArrivingFromEta(topic, baseCommand, etaSeconds);
+  } else if (etaSeconds > 0 && etaSeconds <= ARRIVING_ETA_SEC) {
     if (approachKey) {
       clearArrivingTimer(approachKey);
     }
@@ -1034,6 +1193,7 @@ function handleForecastUpdate(topic, row, receivedAt) {
       data: row,
     });
   }
+  // eta <= 0: already due/at stop — do not transition NO_TRAIN → ARRIVING.
 
   return {
     sourceCommand: "KV8_FORECAST",
@@ -1051,7 +1211,15 @@ function clearArrivingTimer(approachKey) {
   }
 }
 
-function scheduleArriving15s(topic, baseCommand, etaSeconds) {
+function clearArrivedCountdown(approachKey) {
+  const timer = arrivedCountdownTimers.get(approachKey);
+  if (timer) {
+    clearTimeout(timer);
+    arrivedCountdownTimers.delete(approachKey);
+  }
+}
+
+function scheduleArrivingFromEta(topic, baseCommand, etaSeconds) {
   const stopCode = String(baseCommand.entity?.userstopcode || "").toLowerCase();
   const journeyKey = getJourneyKeyFromCommand(baseCommand);
   if (!stopCode || !journeyKey) {
@@ -1061,7 +1229,8 @@ function scheduleArriving15s(topic, baseCommand, etaSeconds) {
   const approachKey = `${stopCode}|${journeyKey}`;
   clearArrivingTimer(approachKey);
 
-  const delayMs = Math.max(0, (etaSeconds - 15) * 1000);
+  // Fire when forecast ETA reaches the arriving threshold (<=15s).
+  const delayMs = Math.max(0, (etaSeconds - ARRIVING_ETA_SEC) * 1000);
   const timer = setTimeout(() => {
     arrivingTimers.delete(approachKey);
     const current = stopStates.get(stopCode);
@@ -1080,13 +1249,59 @@ function scheduleArriving15s(topic, baseCommand, etaSeconds) {
       topic,
       receivedAt: new Date().toISOString(),
       sourceCommand: "SCHEDULED_ETA",
-      etaSeconds: 15,
+      etaSeconds: ARRIVING_ETA_SEC,
       entity: baseCommand.entity,
       data: baseCommand.data,
     });
   }, delayMs);
 
   arrivingTimers.set(approachKey, timer);
+}
+
+function scheduleArrivedFromEta(arrivingCommand) {
+  const stopCode = getStopCodeFromCommand(arrivingCommand);
+  const journeyKey = getJourneyKeyFromCommand(arrivingCommand);
+  if (!stopCode || !journeyKey) {
+    return;
+  }
+
+  const approachKey = `${stopCode}|${journeyKey}`;
+  clearArrivedCountdown(approachKey);
+
+  const etaSeconds = Number(arrivingCommand.etaSeconds);
+  const delayMs = Math.max(
+    0,
+    (Number.isFinite(etaSeconds) ? etaSeconds : ARRIVING_ETA_SEC) * 1000,
+  );
+
+  const timer = setTimeout(() => {
+    arrivedCountdownTimers.delete(approachKey);
+    const current = stopStates.get(stopCode);
+    if (
+      current?.journeyKey === journeyKey &&
+      (current.command === "RET_TRAIN_ARRIVED" ||
+        current.command === "RET_TRAIN_DEPARTED")
+    ) {
+      return;
+    }
+
+    emitDerivedCommand({
+      type: "transit-command",
+      protocol: "RET",
+      command: "RET_TRAIN_ARRIVED",
+      topic: arrivingCommand.topic,
+      receivedAt: new Date().toISOString(),
+      sourceCommand: "ETA_ARRIVAL_COUNTDOWN",
+      etaSeconds: 0,
+      entity: arrivingCommand.entity,
+      data: arrivingCommand.data || {},
+    });
+  }, delayMs);
+
+  arrivedCountdownTimers.set(approachKey, timer);
+  console.log(
+    `[RET] ARRIVING → countdown ${Math.round(delayMs / 1000)}s to ARRIVED (${journeyKey || stopCode})`,
+  );
 }
 
 function emitDerivedCommand(commandMessage) {
@@ -1105,6 +1320,12 @@ function emitDerivedCommand(commandMessage) {
 
   if (scheduleDepartureTimer) {
     scheduleDepartureNoTrain(commandMessage);
+  }
+
+  syncFeedsToCommand(commandMessage.command, `command:${commandMessage.command}`);
+
+  if (commandMessage.command === "RET_TRAIN_ARRIVING_15S") {
+    scheduleArrivedFromEta(commandMessage);
   }
 
   broadcastControlJson(commandMessage);
@@ -1195,7 +1416,13 @@ function processTurboMessage(topic, decoded, receivedAt) {
   return { matchingRows, parseError };
 }
 
-function recordInboundMessage(decoded, matchingRowCount, parseError, feed) {
+function recordInboundMessage(
+  decoded,
+  matchingRowCount,
+  parseError,
+  feed,
+  payloadBytes = 0,
+) {
   const stats =
     feed === "turbo" ? bridgeStatus.zmq.turbo : bridgeStatus.zmq;
 
@@ -1216,19 +1443,172 @@ function recordInboundMessage(decoded, matchingRowCount, parseError, feed) {
   }
 
   stats.relevantMessages += 1;
+  stats.bytesRelevant += Number(payloadBytes) || 0;
   return true;
 }
 
-async function startZmqBridge() {
+function subscribeBisonTopics(reason = "manual") {
+  if (bisonSubscribed) {
+    return false;
+  }
+
   for (const topic of ZMQ_TOPICS) {
     subscriber.subscribe(topic);
   }
 
+  bisonSubscribed = true;
+  bridgeStatus.zmq.subscribed = true;
+  bridgeStatus.zmq.state = "subscribed";
+  bridgeStatus.zmq.lastSubscribeAt = new Date().toISOString();
+  console.log(
+    `[ZMQ/RIG] Subscribed topics: ${ZMQ_TOPICS.join(", ")} (${reason})`,
+  );
+  return true;
+}
+
+function unsubscribeBisonTopics(reason = "manual") {
+  if (!bisonSubscribed) {
+    return false;
+  }
+
+  for (const topic of ZMQ_TOPICS) {
+    subscriber.unsubscribe(topic);
+  }
+
+  bisonSubscribed = false;
+  bridgeStatus.zmq.subscribed = false;
+  bridgeStatus.zmq.state = "standby";
+  bridgeStatus.zmq.lastUnsubscribeAt = new Date().toISOString();
+  console.log(`[ZMQ/RIG] Unsubscribed (${reason})`);
+  return true;
+}
+
+function subscribeTurboTopics(reason = "manual") {
+  if (!ZMQ_TURBO_ENABLED || ZMQ_TURBO_TOPICS.length === 0) {
+    return false;
+  }
+
+  if (turboSubscribed) {
+    return false;
+  }
+
+  for (const topic of ZMQ_TURBO_TOPICS) {
+    turboSubscriber.subscribe(topic);
+  }
+
+  turboSubscribed = true;
+  bridgeStatus.zmq.turbo.subscribed = true;
+  bridgeStatus.zmq.turbo.state = "subscribed";
+  bridgeStatus.zmq.turbo.lastSubscribeAt = new Date().toISOString();
+  console.log(
+    `[ZMQ/GOVI] Subscribed topics: ${ZMQ_TURBO_TOPICS.join(", ")} (${reason})`,
+  );
+  return true;
+}
+
+function unsubscribeTurboTopics(reason = "manual") {
+  if (!turboSubscribed) {
+    return false;
+  }
+
+  for (const topic of ZMQ_TURBO_TOPICS) {
+    turboSubscriber.unsubscribe(topic);
+  }
+
+  turboSubscribed = false;
+  bridgeStatus.zmq.turbo.subscribed = false;
+  bridgeStatus.zmq.turbo.state = "standby";
+  bridgeStatus.zmq.turbo.lastUnsubscribeAt = new Date().toISOString();
+  console.log(`[ZMQ/GOVI] Unsubscribed (${reason})`);
+  return true;
+}
+
+function setFeedPhase(phase, reason = "manual") {
+  if (!["rig", "govi", "arriving"].includes(phase)) {
+    return feedPhase;
+  }
+
+  // When phase switching is disabled, keep both feeds subscribed.
+  if (!ZMQ_TURBO_ON_DEMAND || !ZMQ_TURBO_ENABLED) {
+    subscribeBisonTopics(reason);
+    if (ZMQ_TURBO_ENABLED) {
+      subscribeTurboTopics(reason);
+    }
+    feedPhase = phase;
+    bridgeStatus.zmq.feedPhase = phase;
+    return feedPhase;
+  }
+
+  if (phase === feedPhase) {
+    // Still enforce the expected subscription pair in case of drift.
+  } else {
+    console.log(`[ZMQ] Feed phase ${feedPhase} → ${phase} (${reason})`);
+  }
+
+  feedPhase = phase;
+  bridgeStatus.zmq.feedPhase = phase;
+
+  if (phase === "rig") {
+    subscribeBisonTopics(reason);
+    unsubscribeTurboTopics(reason);
+  } else if (phase === "govi") {
+    unsubscribeBisonTopics(reason);
+    subscribeTurboTopics(reason);
+  } else if (phase === "arriving") {
+    unsubscribeBisonTopics(reason);
+    unsubscribeTurboTopics(reason);
+  }
+
+  return feedPhase;
+}
+
+function syncFeedsToCommand(command, reason = "command") {
+  if (command === "RET_NO_TRAIN" || command === "RET_TRAIN_ARRIVED") {
+    setFeedPhase("rig", reason);
+    return;
+  }
+
+  if (command === "RET_TRAIN_DEPARTED") {
+    setFeedPhase("govi", reason);
+    return;
+  }
+
+  if (command === "RET_TRAIN_ARRIVING_15S") {
+    setFeedPhase("arriving", reason);
+  }
+}
+
+function maybeActivateGoviForOnRoute(baseCommand) {
+  if (!ZMQ_TURBO_ENABLED || !ZMQ_TURBO_ON_DEMAND) {
+    return;
+  }
+
+  // Do not leave RIG while a train is at the stop (need DEPARTURE) or while
+  // ARRIVING countdown owns the next ARRIVED transition.
+  for (const state of stopStates.values()) {
+    if (
+      state?.command === "RET_TRAIN_ARRIVED" ||
+      state?.command === "RET_TRAIN_ARRIVING_15S"
+    ) {
+      return;
+    }
+  }
+
+  const vehicle =
+    baseCommand?.entity?.vehiclenumber ||
+    baseCommand?.data?.vehiclenumber ||
+    "?";
+  setFeedPhase("govi", `onroute:${vehicle}`);
+}
+
+async function startZmqBridge() {
   subscriber.connect(ZMQ_ENDPOINT);
-  bridgeStatus.zmq.state = "connected";
   bridgeStatus.zmq.connectedAt = new Date().toISOString();
-  console.log(`[ZMQ] Connected to ${ZMQ_ENDPOINT}`);
-  console.log(`[ZMQ] Subscribed topics: ${ZMQ_TOPICS.join(", ")}`);
+  console.log(`[ZMQ/RIG] Connected to ${ZMQ_ENDPOINT}`);
+
+  // Step 2: start on RIG; GOVI stays standby until DEPARTED / ONROUTE.
+  setFeedPhase("rig", "startup");
+
   if (USERSTOPCODES.length > 0) {
     console.log(
       `[ZMQ] Filtering activity to userstopcodes: ${USERSTOPCODES.join(", ")}`,
@@ -1246,6 +1626,8 @@ async function startZmqBridge() {
     const payloadBuffer = payloadFrames.length
       ? Buffer.concat(payloadFrames)
       : Buffer.alloc(0);
+
+    bridgeStatus.zmq.bytesReceived += payloadBuffer.length;
 
     if (payloadBuffer.length > MAX_PAYLOAD_BYTES) {
       const droppedAt = new Date().toISOString();
@@ -1266,6 +1648,17 @@ async function startZmqBridge() {
       continue;
     }
 
+    // Early reject: skip XML parse when stop filter is not present.
+    if (
+      USERSTOPCODES.length > 0 &&
+      (!decoded.text || !xmlContainsTrackedStop(decoded.text))
+    ) {
+      bridgeStatus.zmq.totalMessages += 1;
+      bridgeStatus.zmq.ignoredMessages += 1;
+      bridgeStatus.zmq.lastMessageAt = receivedAt;
+      continue;
+    }
+
     const { commandMessages, matchingRows, parseError } = processBisonMessage(
       topic,
       decoded,
@@ -1278,6 +1671,7 @@ async function startZmqBridge() {
         matchingRows.length,
         parseError,
         "bison",
+        payloadBuffer.length,
       )
     ) {
       continue;
@@ -1314,15 +1708,19 @@ async function startTurboBridge() {
     return;
   }
 
-  for (const topic of ZMQ_TURBO_TOPICS) {
-    turboSubscriber.subscribe(topic);
-  }
-
   turboSubscriber.connect(ZMQ_TURBO_ENDPOINT);
-  bridgeStatus.zmq.turbo.state = "connected";
   bridgeStatus.zmq.turbo.connectedAt = new Date().toISOString();
-  console.log(`[ZMQ/TURBO] Connected to ${ZMQ_TURBO_ENDPOINT}`);
-  console.log(`[ZMQ/TURBO] Subscribed topics: ${ZMQ_TURBO_TOPICS.join(", ")}`);
+  console.log(`[ZMQ/GOVI] Connected to ${ZMQ_TURBO_ENDPOINT}`);
+
+  if (ZMQ_TURBO_ON_DEMAND) {
+    bridgeStatus.zmq.turbo.state = "standby";
+    bridgeStatus.zmq.turbo.subscribed = false;
+    console.log(
+      `[ZMQ/GOVI] Phase switching enabled (RIG idle / GOVI after departed|onroute)`,
+    );
+  } else {
+    subscribeTurboTopics("startup");
+  }
 
   for await (const msg of turboSubscriber) {
     if (!Array.isArray(msg) || msg.length === 0) {
@@ -1334,6 +1732,8 @@ async function startTurboBridge() {
     const payloadBuffer = payloadFrames.length
       ? Buffer.concat(payloadFrames)
       : Buffer.alloc(0);
+
+    bridgeStatus.zmq.turbo.bytesReceived += payloadBuffer.length;
 
     if (payloadBuffer.length > MAX_PAYLOAD_BYTES) {
       bridgeStatus.zmq.turbo.droppedMessages += 1;
@@ -1353,6 +1753,17 @@ async function startTurboBridge() {
       continue;
     }
 
+    // Early reject: skip CTX/XML parse when stop filter is not present.
+    if (
+      USERSTOPCODES.length > 0 &&
+      (!decoded.text || !xmlContainsTrackedStop(decoded.text))
+    ) {
+      bridgeStatus.zmq.turbo.totalMessages += 1;
+      bridgeStatus.zmq.turbo.ignoredMessages += 1;
+      bridgeStatus.zmq.turbo.lastMessageAt = receivedAt;
+      continue;
+    }
+
     const { matchingRows, parseError } = processTurboMessage(
       topic,
       decoded,
@@ -1365,6 +1776,7 @@ async function startTurboBridge() {
         matchingRows.length,
         parseError,
         "turbo",
+        payloadBuffer.length,
       )
     ) {
       continue;
@@ -1415,6 +1827,7 @@ function sendInitialNoTrain() {
 
   broadcastControlJson(noTrainMessage);
   broadcastJson(noTrainMessage);
+  setFeedPhase("rig", "initial-no-train");
   console.log(
     `[RET] No train info received for ${USERSTOPCODES.join(",")} within ${NO_TRAIN_INITIAL_DELAY_MS}ms — sent RET_NO_TRAIN`,
   );
