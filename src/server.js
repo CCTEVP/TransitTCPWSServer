@@ -67,7 +67,8 @@ let initialNoTrainSent = false;
 let departureNoTrainTimer = null;
 let bisonSubscribed = false;
 let turboSubscribed = false;
-let feedPhase = "rig"; // rig | govi | arriving
+let feedPhase = "bootstrap"; // bootstrap | rig | govi | arriving
+let feedSwitchingActive = false;
 const arrivingTimers = new Map();
 const arrivedCountdownTimers = new Map();
 
@@ -115,7 +116,8 @@ const bridgeStatus = {
     connectedAt: null,
     lastSubscribeAt: null,
     lastUnsubscribeAt: null,
-    feedPhase: "rig",
+    feedPhase: "bootstrap",
+    feedSwitchingActive: false,
     turbo: {
       enabled: ZMQ_TURBO_ENABLED,
       onDemand: ZMQ_TURBO_ON_DEMAND,
@@ -1523,6 +1525,20 @@ function unsubscribeTurboTopics(reason = "manual") {
   return true;
 }
 
+function enterBootstrapFeeds(reason = "startup") {
+  feedSwitchingActive = false;
+  feedPhase = "bootstrap";
+  bridgeStatus.zmq.feedPhase = "bootstrap";
+  bridgeStatus.zmq.feedSwitchingActive = false;
+  subscribeBisonTopics(reason);
+  if (ZMQ_TURBO_ENABLED) {
+    subscribeTurboTopics(reason);
+  }
+  console.log(
+    `[ZMQ] Bootstrap dual-subscribe (RIG + GOVI); phase switching starts on first train state (${reason})`,
+  );
+}
+
 function setFeedPhase(phase, reason = "manual") {
   if (!["rig", "govi", "arriving"].includes(phase)) {
     return feedPhase;
@@ -1537,6 +1553,21 @@ function setFeedPhase(phase, reason = "manual") {
     feedPhase = phase;
     bridgeStatus.zmq.feedPhase = phase;
     return feedPhase;
+  }
+
+  // Startup / initial NO_TRAIN: keep listening to both until a real train state.
+  if (
+    !feedSwitchingActive &&
+    (reason === "startup" || reason === "initial-no-train")
+  ) {
+    enterBootstrapFeeds(reason);
+    return feedPhase;
+  }
+
+  if (!feedSwitchingActive) {
+    feedSwitchingActive = true;
+    bridgeStatus.zmq.feedSwitchingActive = true;
+    console.log(`[ZMQ] Leaving bootstrap — phase switching active (${reason})`);
   }
 
   if (phase === feedPhase) {
@@ -1563,6 +1594,16 @@ function setFeedPhase(phase, reason = "manual") {
 }
 
 function syncFeedsToCommand(command, reason = "command") {
+  // Initial NO_TRAIN must not end bootstrap dual-subscribe.
+  if (
+    command === "RET_NO_TRAIN" &&
+    !feedSwitchingActive &&
+    String(reason).includes("initial-no-train")
+  ) {
+    enterBootstrapFeeds("initial-no-train");
+    return;
+  }
+
   if (command === "RET_NO_TRAIN" || command === "RET_TRAIN_ARRIVED") {
     setFeedPhase("rig", reason);
     return;
@@ -1606,8 +1647,8 @@ async function startZmqBridge() {
   bridgeStatus.zmq.connectedAt = new Date().toISOString();
   console.log(`[ZMQ/RIG] Connected to ${ZMQ_ENDPOINT}`);
 
-  // Step 2: start on RIG; GOVI stays standby until DEPARTED / ONROUTE.
-  setFeedPhase("rig", "startup");
+  // Beginning only: listen to both; switch after first real train state.
+  enterBootstrapFeeds("startup");
 
   if (USERSTOPCODES.length > 0) {
     console.log(
@@ -1713,10 +1754,9 @@ async function startTurboBridge() {
   console.log(`[ZMQ/GOVI] Connected to ${ZMQ_TURBO_ENDPOINT}`);
 
   if (ZMQ_TURBO_ON_DEMAND) {
-    bridgeStatus.zmq.turbo.state = "standby";
-    bridgeStatus.zmq.turbo.subscribed = false;
+    // Turbo topics are subscribed during enterBootstrapFeeds() from RIG startup.
     console.log(
-      `[ZMQ/GOVI] Phase switching enabled (RIG idle / GOVI after departed|onroute)`,
+      `[ZMQ/GOVI] Bootstrap + phase switching (both at start; then rig|govi|arriving)`,
     );
   } else {
     subscribeTurboTopics("startup");
@@ -1827,7 +1867,8 @@ function sendInitialNoTrain() {
 
   broadcastControlJson(noTrainMessage);
   broadcastJson(noTrainMessage);
-  setFeedPhase("rig", "initial-no-train");
+  // Keep both feeds until the first real train state (ARRIVED / DEPARTED / ARRIVING / ONROUTE).
+  enterBootstrapFeeds("initial-no-train");
   console.log(
     `[RET] No train info received for ${USERSTOPCODES.join(",")} within ${NO_TRAIN_INITIAL_DELAY_MS}ms — sent RET_NO_TRAIN`,
   );

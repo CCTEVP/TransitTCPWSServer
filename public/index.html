@@ -835,6 +835,7 @@
             <div class="meta-row">${renderTags(zmq?.topics || [])}</div>
             <div class="meta-row">
               <span class="stat">Phase <strong>${feedPhase}</strong></span>
+              <span class="stat">Switching <strong>${zmq?.feedSwitchingActive ? "yes" : "bootstrap"}</strong></span>
               <span class="stat">Relevant <strong>${zmq?.relevantMessages || 0}</strong></span>
               <span class="stat">Ignored <strong>${zmq?.ignoredMessages || 0}</strong></span>
               <span class="stat">In <strong>${formatBytes(zmq?.bytesReceived)}</strong></span>
