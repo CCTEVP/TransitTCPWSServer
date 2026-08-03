@@ -478,6 +478,74 @@
         font-family: Consolas, "Courier New", monospace;
       }
 
+      .upcoming-panel {
+        max-height: 220px;
+        overflow: auto;
+        border-radius: 8px;
+        border: 1px solid var(--tcp-border);
+        background: var(--tcp-soft);
+      }
+
+      .upcoming-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.78rem;
+      }
+
+      .upcoming-table th,
+      .upcoming-table td {
+        padding: 0.4rem 0.55rem;
+        text-align: left;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        white-space: nowrap;
+      }
+
+      .upcoming-table th {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        background: rgba(255, 255, 255, 0.55);
+        position: sticky;
+        top: 0;
+      }
+
+      .upcoming-table tr.nearest td {
+        background: rgba(13, 110, 133, 0.1);
+        font-weight: 650;
+      }
+
+      .upcoming-table .eta {
+        font-family: Consolas, "Courier New", monospace;
+        font-weight: 700;
+        color: var(--tcp-accent);
+      }
+
+      .upcoming-table .badge-nearest {
+        display: inline-block;
+        margin-left: 0.35rem;
+        padding: 0.05rem 0.35rem;
+        border-radius: 999px;
+        font-size: 0.62rem;
+        font-weight: 700;
+        color: #fff;
+        background: var(--tcp-accent);
+        vertical-align: middle;
+      }
+
+      .upcoming-table .badge-cached {
+        display: inline-block;
+        margin-left: 0.35rem;
+        padding: 0.05rem 0.35rem;
+        border-radius: 999px;
+        font-size: 0.62rem;
+        font-weight: 700;
+        color: #7a5b00;
+        background: #ffe6a8;
+        vertical-align: middle;
+      }
+
       .emptyMsg {
         padding: 0.7rem;
         color: var(--muted);
@@ -637,6 +705,24 @@
             </div>
           </section>
 
+          <section class="panel" data-panel>
+            <div class="panel-toggle" role="button" tabindex="0" aria-expanded="true">
+              <span class="panel-toggle-title">
+                <span class="chevron" aria-hidden="true"></span>
+                <h2>Coming vehicles</h2>
+              </span>
+              <span class="panel-actions">
+                <span id="upcomingCount" class="chip">0</span>
+              </span>
+            </div>
+            <div class="panel-body">
+              <p class="card-sub">Next 3 GOVI forecasts, nearest ETA first. Cached ETAs keep counting while GOVI is standby; list refreshes when GOVI returns.</p>
+              <div id="upcomingPanel" class="upcoming-panel">
+                <div class="emptyMsg">No upcoming vehicles yet...</div>
+              </div>
+            </div>
+          </section>
+
           <section class="panel panel-grow" data-panel>
             <div class="panel-toggle" role="button" tabindex="0" aria-expanded="true">
               <span class="panel-toggle-title">
@@ -743,6 +829,8 @@
         tcpSummary: document.getElementById("tcpSummary"),
         wsSummary: document.getElementById("wsSummary"),
         feedsPanel: document.getElementById("feedsPanel"),
+        upcomingPanel: document.getElementById("upcomingPanel"),
+        upcomingCount: document.getElementById("upcomingCount"),
         channelsPanel: document.getElementById("channelsPanel"),
         tcpConfigList: document.getElementById("tcpConfigList"),
         wsConfigList: document.getElementById("wsConfigList"),
@@ -816,6 +904,69 @@
             <span class="kpi-label">${label}</span>
             <div class="kpi-value">${valueHtml}</div>
           </div>
+        `;
+      }
+
+      function formatEta(seconds) {
+        if (!Number.isFinite(seconds)) return "—";
+        if (seconds < 0) return `${seconds}s`;
+        if (seconds < 60) return `${seconds}s`;
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.abs(seconds % 60);
+        return `${mins}m ${String(secs).padStart(2, "0")}s`;
+      }
+
+      function renderUpcoming(vehicles) {
+        const rows = Array.isArray(vehicles) ? vehicles : [];
+        el.upcomingCount.textContent = String(rows.length);
+
+        if (rows.length === 0) {
+          el.upcomingPanel.innerHTML =
+            '<div class="emptyMsg">No upcoming vehicles yet...</div>';
+          return;
+        }
+
+        const body = rows
+          .map((vehicle) => {
+            const nearestClass = vehicle.isNearest ? "nearest" : "";
+            const nearestBadge = vehicle.isNearest
+              ? '<span class="badge-nearest">nearest</span>'
+              : "";
+            const cachedBadge = vehicle.cached
+              ? '<span class="badge-cached">cached</span>'
+              : "";
+            return `
+              <tr class="${nearestClass}">
+                <td>${vehicle.rank || ""}</td>
+                <td><strong>${vehicle.vehiclenumber || "—"}</strong>${nearestBadge}${cachedBadge}</td>
+                <td>${vehicle.lineplanningnumber || "—"}</td>
+                <td class="eta">${formatEta(vehicle.etaSeconds)}</td>
+                <td>${vehicle.expectedArrivalTime || "—"}</td>
+                <td>${vehicle.tripStatus || "—"}</td>
+              </tr>
+            `;
+          })
+          .join("");
+
+        const cacheNote = rows.some((vehicle) => vehicle.cached)
+          ? `<div class="emptyMsg" style="border-bottom:1px solid rgba(0,0,0,.06)">GOVI standby — counting down from last ExpectedArrivalTime</div>`
+          : "";
+
+        el.upcomingPanel.innerHTML = `
+          ${cacheNote}
+          <table class="upcoming-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Vehicle</th>
+                <th>Line</th>
+                <th>ETA</th>
+                <th>Expected</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>${body}</tbody>
+          </table>
         `;
       }
 
@@ -1150,6 +1301,7 @@
 
           renderSummaries(data);
           renderFeeds(data?.zmq || {});
+          renderUpcoming(data?.upcomingVehicles || []);
           renderChannels(data?.websocket || {}, data?.config || {});
           renderConfig(data?.config || {}, data?.zmq || {});
 

@@ -45,6 +45,12 @@ const ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS = Number(
 );
 // Emit RET_TRAIN_ARRIVING_15S only when forecast ETA is at/below this (seconds).
 const ARRIVING_ETA_SEC = Number(process.env.ARRIVING_ETA_SEC || 15);
+const UPCOMING_STALE_MS = Number(process.env.UPCOMING_STALE_MS || 120000);
+const UPCOMING_DISPLAY_LIMIT = Number(process.env.UPCOMING_DISPLAY_LIMIT || 3);
+// Keep cached forecasts this long after expected arrival while GOVI is off.
+const UPCOMING_OVERDUE_KEEP_SEC = Number(
+  process.env.UPCOMING_OVERDUE_KEEP_SEC || 90,
+);
 const MAX_PAYLOAD_BYTES = Number(process.env.MAX_PAYLOAD_BYTES || 200000);
 const WS_CHANNEL_CONTROL = "control";
 const WS_CHANNEL_CONTENT = "content";
@@ -71,6 +77,8 @@ let feedPhase = "bootstrap"; // bootstrap | rig | govi | arriving
 let feedSwitchingActive = false;
 const arrivingTimers = new Map();
 const arrivedCountdownTimers = new Map();
+// stopCode -> Map(journeyKey -> upcoming forecast entry)
+const upcomingByStop = new Map();
 
 const app = express();
 const publicDir = path.join(__dirname, "..", "public");
@@ -442,6 +450,7 @@ function getStatusPayload() {
       startedAt: bridgeStatus.startedAt,
       uptimeSeconds: Math.floor(process.uptime()),
     },
+    upcomingVehicles: getUpcomingVehiclesSnapshot(),
   };
 }
 
@@ -677,6 +686,35 @@ function toDateOnDay(timeValue, dayValue, fallbackIso) {
   const seconds = Number(match[3] || 0);
   base.setHours(hours, minutes, seconds, 0);
   return base;
+}
+
+function extractExpectedArrivalMs(row, receivedAt) {
+  if (!row || typeof row !== "object") {
+    return null;
+  }
+
+  const operatingDay =
+    getRowValue(row, [
+      "operatingday",
+      "operatingdate",
+      "operationdate",
+      "timestamp",
+    ]) || receivedAt;
+
+  const expectedArrival = getRowValue(row, "expectedarrivaltime");
+  if (expectedArrival) {
+    const arrivalDate = toDateOnDay(expectedArrival, operatingDay, receivedAt);
+    if (arrivalDate) {
+      return arrivalDate.getTime();
+    }
+  }
+
+  const etaSeconds = extractEtaSeconds(row, receivedAt);
+  if (!Number.isFinite(etaSeconds)) {
+    return null;
+  }
+
+  return new Date(receivedAt).getTime() + etaSeconds * 1000;
 }
 
 function extractEtaSeconds(row, receivedAt) {
@@ -1153,56 +1191,234 @@ function handleForecastUpdate(topic, row, receivedAt) {
   const journeyKey = getJourneyKeyFromCommand(baseCommand);
   const approachKey = stopCode && journeyKey ? `${stopCode}|${journeyKey}` : null;
   const tripStatus = asUpperString(getRowValue(row, "tripstopstatus"));
+  const expectedArrivalMs = extractExpectedArrivalMs(row, receivedAt);
+  const etaSeconds = Number.isFinite(expectedArrivalMs)
+    ? Math.round((expectedArrivalMs - new Date(receivedAt).getTime()) / 1000)
+    : extractEtaSeconds(row, receivedAt);
 
-  if (tripStatus === "ARRIVED" || tripStatus === "PASSED") {
-    if (approachKey) {
-      clearArrivingTimer(approachKey);
-      clearArrivedCountdown(approachKey);
-    }
-    return {
-      sourceCommand: "KV8_FORECAST",
-      entity,
-      data: row,
-      tripStatus,
-    };
-  }
+  const entry = {
+    stopCode,
+    journeyKey,
+    approachKey,
+    topic,
+    receivedAt,
+    updatedAtMs: Date.now(),
+    tripStatus,
+    etaSeconds: Number.isFinite(etaSeconds) ? etaSeconds : null,
+    expectedArrivalMs,
+    expectedArrivalTime: getRowValue(row, "expectedarrivaltime") || null,
+    vehiclenumber: entity.vehiclenumber || null,
+    lineplanningnumber: entity.lineplanningnumber || null,
+    journeynumber: entity.journeynumber || null,
+    dataownercode: entity.dataownercode || null,
+    entity,
+    data: row,
+    baseCommand,
+  };
 
-  const etaSeconds = extractEtaSeconds(row, receivedAt);
-  if (!Number.isFinite(etaSeconds)) {
-    return {
-      sourceCommand: "KV8_FORECAST",
-      entity,
-      data: row,
-      etaSeconds: null,
-    };
-  }
-
-  if (etaSeconds > ARRIVING_ETA_SEC) {
-    scheduleArrivingFromEta(topic, baseCommand, etaSeconds);
-  } else if (etaSeconds > 0 && etaSeconds <= ARRIVING_ETA_SEC) {
-    if (approachKey) {
-      clearArrivingTimer(approachKey);
-    }
-    emitDerivedCommand({
-      type: "transit-command",
-      protocol: "RET",
-      command: "RET_TRAIN_ARRIVING_15S",
-      topic,
-      receivedAt,
-      sourceCommand: "KV8_FORECAST",
-      etaSeconds,
-      entity,
-      data: row,
-    });
-  }
-  // eta <= 0: already due/at stop — do not transition NO_TRAIN → ARRIVING.
+  upsertUpcomingForecast(entry);
 
   return {
     sourceCommand: "KV8_FORECAST",
     entity,
     data: row,
-    etaSeconds,
+    tripStatus: tripStatus || null,
+    etaSeconds: entry.etaSeconds,
+    vehiclenumber: entry.vehiclenumber,
+    journeyKey,
   };
+}
+
+function upsertUpcomingForecast(entry) {
+  if (!entry?.stopCode || !entry?.journeyKey) {
+    return;
+  }
+
+  let byJourney = upcomingByStop.get(entry.stopCode);
+  if (!byJourney) {
+    byJourney = new Map();
+    upcomingByStop.set(entry.stopCode, byJourney);
+  }
+
+  if (entry.tripStatus === "ARRIVED" || entry.tripStatus === "PASSED") {
+    byJourney.delete(entry.journeyKey);
+    if (entry.approachKey) {
+      clearArrivingTimer(entry.approachKey);
+    }
+    return;
+  }
+
+  byJourney.set(entry.journeyKey, entry);
+}
+
+function liveEtaSeconds(entry, nowMs = Date.now()) {
+  if (Number.isFinite(entry?.expectedArrivalMs)) {
+    return Math.round((entry.expectedArrivalMs - nowMs) / 1000);
+  }
+  if (Number.isFinite(entry?.etaSeconds) && entry?.updatedAtMs) {
+    const ageSec = Math.round((nowMs - entry.updatedAtMs) / 1000);
+    return entry.etaSeconds - ageSec;
+  }
+  return null;
+}
+
+function isGoviFeedLive() {
+  return Boolean(turboSubscribed);
+}
+
+function shouldDropUpcomingEntry(entry, etaSeconds, nowMs = Date.now()) {
+  if (Number.isFinite(etaSeconds) && etaSeconds < -UPCOMING_OVERDUE_KEEP_SEC) {
+    return true;
+  }
+
+  // While GOVI is subscribed, drop journeys that disappeared from the feed.
+  if (isGoviFeedLive() && nowMs - entry.updatedAtMs > UPCOMING_STALE_MS) {
+    return true;
+  }
+
+  // While GOVI is standby/unsubscribed, keep cached rows and continue
+  // counting down from ExpectedArrivalTime until GOVI returns.
+  return false;
+}
+
+function getSortedUpcoming(stopCode, { includeOverdue = false } = {}) {
+  const byJourney = upcomingByStop.get(stopCode);
+  if (!byJourney) {
+    return [];
+  }
+
+  const nowMs = Date.now();
+  const goviLive = isGoviFeedLive();
+  const list = [];
+
+  for (const [journeyKey, entry] of byJourney.entries()) {
+    const etaSeconds = liveEtaSeconds(entry, nowMs);
+    if (shouldDropUpcomingEntry(entry, etaSeconds, nowMs)) {
+      byJourney.delete(journeyKey);
+      if (entry.approachKey) {
+        clearArrivingTimer(entry.approachKey);
+      }
+      continue;
+    }
+
+    if (!Number.isFinite(etaSeconds)) {
+      continue;
+    }
+    if (!includeOverdue && etaSeconds <= 0) {
+      continue;
+    }
+
+    list.push({
+      ...entry,
+      etaSeconds,
+      cached: !goviLive || nowMs - entry.updatedAtMs > 5000,
+    });
+  }
+
+  list.sort((a, b) => {
+    if (a.etaSeconds !== b.etaSeconds) {
+      return a.etaSeconds - b.etaSeconds;
+    }
+    return String(a.vehiclenumber || "").localeCompare(
+      String(b.vehiclenumber || ""),
+    );
+  });
+
+  return list;
+}
+
+function getUpcomingVehiclesSnapshot() {
+  const stops =
+    USERSTOPCODES.length > 0
+      ? USERSTOPCODES
+      : [...upcomingByStop.keys()];
+  const vehicles = [];
+  const goviLive = isGoviFeedLive();
+
+  for (const stopCode of stops) {
+    const sorted = getSortedUpcoming(stopCode, { includeOverdue: true }).slice(
+      0,
+      UPCOMING_DISPLAY_LIMIT,
+    );
+    const nearestIndex = sorted.findIndex((entry) => entry.etaSeconds > 0);
+    sorted.forEach((entry, index) => {
+      vehicles.push({
+        rank: index + 1,
+        isNearest: index === nearestIndex,
+        cached: Boolean(entry.cached),
+        goviLive,
+        stopCode: entry.stopCode,
+        vehiclenumber: entry.vehiclenumber,
+        lineplanningnumber: entry.lineplanningnumber,
+        journeynumber: entry.journeynumber,
+        journeyKey: entry.journeyKey,
+        tripStatus: entry.tripStatus || null,
+        etaSeconds: entry.etaSeconds,
+        expectedArrivalTime: entry.expectedArrivalTime,
+        updatedAt: new Date(entry.updatedAtMs).toISOString(),
+      });
+    });
+  }
+
+  return vehicles;
+}
+
+function stopIsLockedToTrain(stopCode) {
+  const current = stopStates.get(stopCode);
+  return (
+    current?.command === "RET_TRAIN_ARRIVING_15S" ||
+    current?.command === "RET_TRAIN_ARRIVED"
+  );
+}
+
+function reconcileUpcomingArrivals(stopCode) {
+  const sorted = getSortedUpcoming(stopCode);
+  const nearest = sorted[0] || null;
+  const byJourney = upcomingByStop.get(stopCode);
+
+  if (byJourney) {
+    for (const entry of byJourney.values()) {
+      if (!nearest || entry.journeyKey !== nearest.journeyKey) {
+        if (entry.approachKey) {
+          clearArrivingTimer(entry.approachKey);
+        }
+      }
+    }
+  }
+
+  // Already committed to a train at/near the stop — keep ranking for UI only.
+  if (stopIsLockedToTrain(stopCode)) {
+    return sorted;
+  }
+
+  if (!nearest) {
+    return sorted;
+  }
+
+  if (nearest.etaSeconds > ARRIVING_ETA_SEC) {
+    scheduleArrivingFromEta(
+      nearest.topic,
+      nearest.baseCommand,
+      nearest.etaSeconds,
+    );
+  } else if (nearest.etaSeconds > 0 && nearest.etaSeconds <= ARRIVING_ETA_SEC) {
+    if (nearest.approachKey) {
+      clearArrivingTimer(nearest.approachKey);
+    }
+    emitDerivedCommand({
+      type: "transit-command",
+      protocol: "RET",
+      command: "RET_TRAIN_ARRIVING_15S",
+      topic: nearest.topic,
+      receivedAt: new Date().toISOString(),
+      sourceCommand: "KV8_FORECAST_NEAREST",
+      etaSeconds: nearest.etaSeconds,
+      entity: nearest.entity,
+      data: nearest.data,
+    });
+  }
+
+  return sorted;
 }
 
 function clearArrivingTimer(approachKey) {
@@ -1231,10 +1447,20 @@ function scheduleArrivingFromEta(topic, baseCommand, etaSeconds) {
   const approachKey = `${stopCode}|${journeyKey}`;
   clearArrivingTimer(approachKey);
 
-  // Fire when forecast ETA reaches the arriving threshold (<=15s).
+  // Fire when this journey's forecast ETA reaches the arriving threshold.
   const delayMs = Math.max(0, (etaSeconds - ARRIVING_ETA_SEC) * 1000);
   const timer = setTimeout(() => {
     arrivingTimers.delete(approachKey);
+
+    // Only the current nearest vehicle may transition to ARRIVING.
+    const nearest = getSortedUpcoming(stopCode)[0];
+    if (!nearest || nearest.journeyKey !== journeyKey) {
+      return;
+    }
+    if (stopIsLockedToTrain(stopCode)) {
+      return;
+    }
+
     const current = stopStates.get(stopCode);
     if (
       current?.journeyKey === journeyKey &&
@@ -1250,7 +1476,7 @@ function scheduleArrivingFromEta(topic, baseCommand, etaSeconds) {
       command: "RET_TRAIN_ARRIVING_15S",
       topic,
       receivedAt: new Date().toISOString(),
-      sourceCommand: "SCHEDULED_ETA",
+      sourceCommand: "SCHEDULED_ETA_NEAREST",
       etaSeconds: ARRIVING_ETA_SEC,
       entity: baseCommand.entity,
       data: baseCommand.data,
@@ -1410,6 +1636,42 @@ function processTurboMessage(topic, decoded, receivedAt) {
     matchingRows = extractTurboPassTimeRows(decoded)
       .map((row) => handleForecastUpdate(topic, row, receivedAt))
       .filter(Boolean);
+
+    const touchedStops = new Set(
+      matchingRows
+        .map((row) =>
+          String(row?.entity?.userstopcode || "").toLowerCase(),
+        )
+        .filter(Boolean),
+    );
+
+    for (const stopCode of touchedStops) {
+      reconcileUpcomingArrivals(stopCode);
+    }
+
+    const nearestJourneyKeys = new Set();
+    for (const stopCode of touchedStops) {
+      const nearest = getSortedUpcoming(stopCode)[0];
+      if (nearest?.journeyKey) {
+        nearestJourneyKeys.add(nearest.journeyKey);
+      }
+    }
+
+    matchingRows = matchingRows
+      .map((row) => ({
+        ...row,
+        isNearest: nearestJourneyKeys.has(row.journeyKey),
+      }))
+      .sort((a, b) => {
+        const etaA = Number.isFinite(a.etaSeconds) ? a.etaSeconds : Number.POSITIVE_INFINITY;
+        const etaB = Number.isFinite(b.etaSeconds) ? b.etaSeconds : Number.POSITIVE_INFINITY;
+        if (etaA !== etaB) {
+          return etaA - etaB;
+        }
+        return String(a.entity?.vehiclenumber || "").localeCompare(
+          String(b.entity?.vehiclenumber || ""),
+        );
+      });
   } catch (error) {
     parseError = error?.message || String(error);
     matchingRows = [];
@@ -1877,6 +2139,20 @@ function sendInitialNoTrain() {
 server.listen(PORT, () => {
   console.log(`[HTTP/WS] Server listening on http://localhost:${PORT}`);
   setTimeout(sendInitialNoTrain, NO_TRAIN_INITIAL_DELAY_MS);
+
+  // Keep ETA countdowns / nearest ARRIVING working from cache while GOVI is standby.
+  setInterval(() => {
+    const stops =
+      USERSTOPCODES.length > 0
+        ? USERSTOPCODES
+        : [...upcomingByStop.keys()];
+    for (const stopCode of stops) {
+      if (!upcomingByStop.has(stopCode)) {
+        continue;
+      }
+      reconcileUpcomingArrivals(stopCode);
+    }
+  }, 1000);
 });
 
 startZmqBridge().catch((error) => {
