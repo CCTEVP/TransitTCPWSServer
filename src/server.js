@@ -56,6 +56,10 @@ const WS_CHANNEL_CONTROL = "control";
 const WS_CHANNEL_CONTENT = "content";
 const ROTTERDAM_TOPIC_PREFIX = process.env.ROTTERDAM_TOPIC_PREFIX || "/RIG/";
 const USERSTOPCODES = envList("USERSTOPCODES").map((code) => code.toLowerCase());
+// Empty = all lines. Values match LinePlanningNumber (e.g. 1682,1702 — not public line letters).
+const LINEPLANNINGNUMBERS = envList("LINEPLANNINGNUMBERS").map((code) =>
+  String(code).toLowerCase(),
+);
 // GOVI/BISON wall-clock times are Dutch local time, not the server TZ (UTC on Cloud Run).
 const TRANSIT_TIMEZONE =
   process.env.TRANSIT_TIMEZONE || "Europe/Amsterdam";
@@ -158,6 +162,7 @@ const bridgeStatus = {
     bytesRelevant: 0,
     lastError: null,
     userstopcodes: USERSTOPCODES,
+    lineplanningnumbers: LINEPLANNINGNUMBERS,
   },
   websocket: {
     contentBytesSent: 0,
@@ -1021,15 +1026,34 @@ function matchesUserStopCode(row) {
   return USERSTOPCODES.includes(stopCode);
 }
 
+function matchesLinePlanningNumber(row) {
+  if (LINEPLANNINGNUMBERS.length === 0) {
+    return true;
+  }
+
+  const line = String(getRowValue(row, "lineplanningnumber") || "").toLowerCase();
+  return Boolean(line) && LINEPLANNINGNUMBERS.includes(line);
+}
+
+function matchesStopAndLine(row) {
+  return matchesUserStopCode(row) && matchesLinePlanningNumber(row);
+}
+
 function filterBaseCommandsByStop(baseCommands) {
-  if (USERSTOPCODES.length === 0) {
+  if (USERSTOPCODES.length === 0 && LINEPLANNINGNUMBERS.length === 0) {
     return baseCommands;
   }
 
   return baseCommands.filter((command) => {
-    return (
-      matchesUserStopCode(command.entity) || matchesUserStopCode(command.data)
-    );
+    const entityOk =
+      matchesStopAndLine(command.entity) ||
+      (matchesUserStopCode(command.entity) &&
+        matchesLinePlanningNumber(command.data));
+    const dataOk =
+      matchesStopAndLine(command.data) ||
+      (matchesUserStopCode(command.data) &&
+        matchesLinePlanningNumber(command.entity));
+    return entityOk || dataOk;
   });
 }
 
@@ -1272,7 +1296,7 @@ function extractDatedPassTimes(parsedXml) {
 
 function handleForecastUpdate(topic, row, receivedAt) {
   const stopCode = String(getRowValue(row, "userstopcode") || "").toLowerCase();
-  if (!matchesUserStopCode({ userstopcode: stopCode })) {
+  if (!matchesStopAndLine(row)) {
     return null;
   }
 
@@ -1338,15 +1362,28 @@ function upsertUpcomingForecast(entry) {
     upcomingByStop.set(entry.stopCode, byJourney);
   }
 
+  const existing = byJourney.get(entry.journeyKey);
+
+  // GOVI PASSED/ARRIVED must not remove a row we are tracking via RIG
+  // (Arriving/Arrived/Departing) — keep it until NO_TRAIN or depart timeout.
   if (entry.tripStatus === "ARRIVED" || entry.tripStatus === "PASSED") {
-    byJourney.delete(entry.journeyKey);
-    if (entry.approachKey) {
-      clearArrivingTimer(entry.approachKey);
+    if (existing?.rigPinned) {
+      existing.tripStatus = entry.tripStatus;
+      existing.goviUpdatedAtMs = Date.now();
+      byJourney.set(entry.journeyKey, existing);
+      return;
     }
-    return;
+    // Still keep the row for the list (negative ETA allowed); don't delete.
   }
 
-  byJourney.set(entry.journeyKey, entry);
+  byJourney.set(entry.journeyKey, {
+    ...existing,
+    ...entry,
+    displayStatus: existing?.displayStatus || "Driving",
+    rigPinned: Boolean(existing?.rigPinned),
+    removeAtMs: existing?.removeAtMs || null,
+    goviUpdatedAtMs: Date.now(),
+  });
 }
 
 function liveEtaSeconds(entry, nowMs = Date.now()) {
@@ -1364,22 +1401,46 @@ function isGoviFeedLive() {
   return Boolean(turboSubscribed);
 }
 
+function displayStatusForUpcoming(entry) {
+  return entry?.displayStatus || "Driving";
+}
+
+function lifecycleSortRank(entry) {
+  switch (displayStatusForUpcoming(entry)) {
+    case "Departing":
+      return 0;
+    case "Arrived":
+      return 1;
+    case "Arriving":
+      return 2;
+    default:
+      return 3;
+  }
+}
+
 function shouldDropUpcomingEntry(entry, etaSeconds, nowMs = Date.now()) {
+  if (entry?.removeAtMs && nowMs >= entry.removeAtMs) {
+    return true;
+  }
+
+  // Pinned RIG lifecycle rows stay until NO_TRAIN / depart timeout.
+  if (entry?.rigPinned) {
+    return false;
+  }
+
   if (Number.isFinite(etaSeconds) && etaSeconds < -UPCOMING_OVERDUE_KEEP_SEC) {
     return true;
   }
 
-  // While GOVI is subscribed, drop journeys that disappeared from the feed.
-  if (isGoviFeedLive() && nowMs - entry.updatedAtMs > UPCOMING_STALE_MS) {
+  const lastGovi = entry.goviUpdatedAtMs || entry.updatedAtMs || 0;
+  if (isGoviFeedLive() && nowMs - lastGovi > UPCOMING_STALE_MS) {
     return true;
   }
 
-  // While GOVI is standby/unsubscribed, keep cached rows and continue
-  // counting down from ExpectedArrivalTime until GOVI returns.
   return false;
 }
 
-function getSortedUpcoming(stopCode, { includeOverdue = false } = {}) {
+function getSortedUpcoming(stopCode, { includeOverdue = true } = {}) {
   const byJourney = upcomingByStop.get(stopCode);
   if (!byJourney) {
     return [];
@@ -1399,21 +1460,32 @@ function getSortedUpcoming(stopCode, { includeOverdue = false } = {}) {
       continue;
     }
 
-    if (!Number.isFinite(etaSeconds)) {
+    if (!Number.isFinite(etaSeconds) && !entry.rigPinned) {
       continue;
     }
-    if (!includeOverdue && etaSeconds <= 0) {
+    if (
+      !includeOverdue &&
+      Number.isFinite(etaSeconds) &&
+      etaSeconds <= 0 &&
+      !entry.rigPinned
+    ) {
       continue;
     }
 
     list.push({
       ...entry,
-      etaSeconds,
-      cached: !goviLive || nowMs - entry.updatedAtMs > 5000,
+      etaSeconds: Number.isFinite(etaSeconds) ? etaSeconds : 0,
+      cached: !goviLive || nowMs - (entry.goviUpdatedAtMs || entry.updatedAtMs) > 5000,
+      displayStatus: displayStatusForUpcoming(entry),
     });
   }
 
   list.sort((a, b) => {
+    const lifeA = lifecycleSortRank(a);
+    const lifeB = lifecycleSortRank(b);
+    if (lifeA !== lifeB) {
+      return lifeA - lifeB;
+    }
     if (a.etaSeconds !== b.etaSeconds) {
       return a.etaSeconds - b.etaSeconds;
     }
@@ -1434,15 +1506,22 @@ function getUpcomingVehiclesSnapshot() {
   const goviLive = isGoviFeedLive();
 
   for (const stopCode of stops) {
-    const sorted = getSortedUpcoming(stopCode, { includeOverdue: false }).slice(
+    const sorted = getSortedUpcoming(stopCode, { includeOverdue: true }).slice(
       0,
       UPCOMING_DISPLAY_LIMIT,
     );
-    const nearestIndex = sorted.length > 0 ? 0 : -1;
+    const nearestIndex = sorted.findIndex(
+      (entry) =>
+        entry.etaSeconds > 0 && displayStatusForUpcoming(entry) === "Driving",
+    );
     sorted.forEach((entry, index) => {
       vehicles.push({
         rank: index + 1,
-        isNearest: index === nearestIndex,
+        isNearest:
+          index === nearestIndex ||
+          (nearestIndex < 0 &&
+            index === 0 &&
+            entry.displayStatus === "Arriving"),
         cached: Boolean(entry.cached),
         goviLive,
         stopCode: entry.stopCode,
@@ -1451,6 +1530,7 @@ function getUpcomingVehiclesSnapshot() {
         journeynumber: entry.journeynumber,
         journeyKey: entry.journeyKey,
         tripStatus: entry.tripStatus || null,
+        status: entry.displayStatus || "Driving",
         etaSeconds: entry.etaSeconds,
         expectedArrivalTime: entry.expectedArrivalTime,
         updatedAt: new Date(entry.updatedAtMs).toISOString(),
@@ -1459,6 +1539,115 @@ function getUpcomingVehiclesSnapshot() {
   }
 
   return vehicles;
+}
+
+function findUpcomingEntry(stopCode, journeyKey, vehiclenumber) {
+  const byJourney = upcomingByStop.get(stopCode);
+  if (!byJourney) {
+    return null;
+  }
+  if (journeyKey && byJourney.has(journeyKey)) {
+    return { key: journeyKey, entry: byJourney.get(journeyKey), byJourney };
+  }
+  if (vehiclenumber) {
+    for (const [key, entry] of byJourney.entries()) {
+      if (String(entry.vehiclenumber || "") === String(vehiclenumber)) {
+        return { key, entry, byJourney };
+      }
+    }
+  }
+  return null;
+}
+
+function clearUpcomingForStop(stopCode) {
+  const byJourney = upcomingByStop.get(stopCode);
+  if (!byJourney) {
+    return;
+  }
+  for (const entry of byJourney.values()) {
+    if (entry.approachKey) {
+      clearArrivingTimer(entry.approachKey);
+      clearArrivedCountdown(entry.approachKey);
+    }
+  }
+  upcomingByStop.delete(stopCode);
+}
+
+function updateUpcomingFromRetCommand(commandMessage) {
+  const command = commandMessage?.command;
+  const stopCode = getStopCodeFromCommand(commandMessage);
+  if (!stopCode || !command) {
+    return;
+  }
+
+  if (command === "RET_NO_TRAIN") {
+    clearUpcomingForStop(stopCode);
+    return;
+  }
+
+  let displayStatus = null;
+  if (command === "RET_TRAIN_ARRIVING_15S") {
+    displayStatus = "Arriving"; // Entering
+  } else if (command === "RET_TRAIN_ARRIVED") {
+    displayStatus = "Arrived"; // Parked
+  } else if (command === "RET_TRAIN_DEPARTED") {
+    displayStatus = "Departing"; // Leaving
+  } else {
+    return;
+  }
+
+  const journeyKey = getJourneyKeyFromCommand(commandMessage);
+  const vehiclenumber =
+    commandMessage?.entity?.vehiclenumber ||
+    commandMessage?.data?.vehiclenumber ||
+    null;
+
+  let byJourney = upcomingByStop.get(stopCode);
+  if (!byJourney) {
+    byJourney = new Map();
+    upcomingByStop.set(stopCode, byJourney);
+  }
+
+  const found = findUpcomingEntry(stopCode, journeyKey, vehiclenumber);
+  const key =
+    found?.key ||
+    journeyKey ||
+    `${stopCode}|${vehiclenumber || "unknown"}|${Date.now()}`;
+  const existing = found?.entry || {};
+
+  const next = {
+    ...existing,
+    stopCode,
+    journeyKey: journeyKey || existing.journeyKey || key,
+    approachKey: existing.approachKey || `${stopCode}|${key}`,
+    topic: commandMessage.topic || existing.topic,
+    receivedAt: commandMessage.receivedAt || existing.receivedAt,
+    updatedAtMs: Date.now(),
+    tripStatus: existing.tripStatus || null,
+    etaSeconds: existing.etaSeconds ?? null,
+    expectedArrivalMs: existing.expectedArrivalMs ?? null,
+    expectedArrivalTime: existing.expectedArrivalTime || null,
+    vehiclenumber: vehiclenumber || existing.vehiclenumber || null,
+    lineplanningnumber:
+      commandMessage?.entity?.lineplanningnumber ||
+      existing.lineplanningnumber ||
+      null,
+    journeynumber:
+      commandMessage?.entity?.journeynumber || existing.journeynumber || null,
+    dataownercode:
+      commandMessage?.entity?.dataownercode || existing.dataownercode || null,
+    entity: commandMessage.entity || existing.entity || {},
+    data: commandMessage.data || existing.data || {},
+    baseCommand: existing.baseCommand || null,
+    displayStatus,
+    rigPinned: true,
+    removeAtMs:
+      displayStatus === "Departing"
+        ? Date.now() + NO_TRAIN_AFTER_DEPARTURE_MS
+        : null,
+  };
+
+  byJourney.set(key, next);
 }
 
 function stopIsLockedToTrain(stopCode) {
@@ -1470,14 +1659,17 @@ function stopIsLockedToTrain(stopCode) {
 }
 
 function reconcileUpcomingArrivals(stopCode) {
-  const sorted = getSortedUpcoming(stopCode);
-  const nearest = sorted[0] || null;
+  // Only Driving forecasts compete for the next ARRIVING trigger.
+  const hunting = getSortedUpcoming(stopCode, { includeOverdue: false }).filter(
+    (entry) => displayStatusForUpcoming(entry) === "Driving",
+  );
+  const nearest = hunting[0] || null;
   const byJourney = upcomingByStop.get(stopCode);
 
   if (byJourney) {
     for (const entry of byJourney.values()) {
       if (!nearest || entry.journeyKey !== nearest.journeyKey) {
-        if (entry.approachKey) {
+        if (entry.approachKey && displayStatusForUpcoming(entry) === "Driving") {
           clearArrivingTimer(entry.approachKey);
         }
       }
@@ -1486,11 +1678,11 @@ function reconcileUpcomingArrivals(stopCode) {
 
   // Already committed to a train at/near the stop — keep ranking for UI only.
   if (stopIsLockedToTrain(stopCode)) {
-    return sorted;
+    return hunting;
   }
 
   if (!nearest) {
-    return sorted;
+    return hunting;
   }
 
   if (nearest.etaSeconds > ARRIVING_ETA_SEC) {
@@ -1516,7 +1708,7 @@ function reconcileUpcomingArrivals(stopCode) {
     });
   }
 
-  return sorted;
+  return hunting;
 }
 
 function clearArrivingTimer(approachKey) {
@@ -1550,8 +1742,10 @@ function scheduleArrivingFromEta(topic, baseCommand, etaSeconds) {
   const timer = setTimeout(() => {
     arrivingTimers.delete(approachKey);
 
-    // Only the current nearest vehicle may transition to ARRIVING.
-    const nearest = getSortedUpcoming(stopCode)[0];
+    // Only the current nearest Driving vehicle may transition to ARRIVING.
+    const nearest = getSortedUpcoming(stopCode, { includeOverdue: false }).find(
+      (entry) => displayStatusForUpcoming(entry) === "Driving",
+    );
     if (!nearest || nearest.journeyKey !== journeyKey) {
       return;
     }
@@ -1653,6 +1847,8 @@ function emitDerivedCommand(commandMessage) {
   if (commandMessage.command === "RET_TRAIN_ARRIVING_15S") {
     scheduleArrivedFromEta(commandMessage);
   }
+
+  updateUpcomingFromRetCommand(commandMessage);
 
   broadcastControlJson(commandMessage);
   broadcastJson(commandMessage);
@@ -2020,6 +2216,11 @@ async function startZmqBridge() {
       `[ZMQ] Filtering activity to userstopcodes: ${USERSTOPCODES.join(", ")}`,
     );
   }
+  if (LINEPLANNINGNUMBERS.length > 0) {
+    console.log(
+      `[ZMQ] Filtering activity to lineplanningnumbers: ${LINEPLANNINGNUMBERS.join(", ")}`,
+    );
+  }
 
   for await (const msg of subscriber) {
     if (!Array.isArray(msg) || msg.length === 0) {
@@ -2232,6 +2433,9 @@ function sendInitialNoTrain() {
 
   broadcastControlJson(noTrainMessage);
   broadcastJson(noTrainMessage);
+  for (const stopCode of USERSTOPCODES) {
+    clearUpcomingForStop(stopCode);
+  }
   // Keep both feeds until the first real train state (ARRIVED / DEPARTED / ARRIVING / ONROUTE).
   enterBootstrapFeeds("initial-no-train");
   console.log(

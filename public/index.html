@@ -546,6 +546,36 @@
         vertical-align: middle;
       }
 
+      .upcoming-table .badge-status {
+        display: inline-block;
+        padding: 0.12rem 0.45rem;
+        border-radius: 999px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        line-height: 1.2;
+      }
+
+      .upcoming-table .badge-status.driving {
+        color: #3d5a66;
+        background: #d9e7ed;
+      }
+
+      .upcoming-table .badge-status.arriving {
+        color: #7a4d00;
+        background: #ffe0a3;
+      }
+
+      .upcoming-table .badge-status.arrived {
+        color: #0d5c38;
+        background: #c6efd9;
+      }
+
+      .upcoming-table .badge-status.departing {
+        color: #8a2e18;
+        background: #f7d0c6;
+      }
+
       .emptyMsg {
         padding: 0.7rem;
         color: var(--muted);
@@ -716,7 +746,7 @@
               </span>
             </div>
             <div class="panel-body">
-              <p class="card-sub">Next 3 GOVI forecasts, nearest ETA first. Cached ETAs keep counting while GOVI is standby; list refreshes when GOVI returns.</p>
+              <p class="card-sub">Next 3 GOVI forecasts (negative ETA kept). Status: Driving → Arriving → Arrived → Departing via RIG; row clears on no-train or 30s after departed.</p>
               <div id="upcomingPanel" class="upcoming-panel">
                 <div class="emptyMsg">No upcoming vehicles yet...</div>
               </div>
@@ -916,6 +946,19 @@
         return `${mins}m ${String(secs).padStart(2, "0")}s`;
       }
 
+      function statusBadge(status) {
+        const label = String(status || "—");
+        const key = label.toLowerCase();
+        const tone =
+          key === "driving" ||
+          key === "arriving" ||
+          key === "arrived" ||
+          key === "departing"
+            ? key
+            : "driving";
+        return `<span class="badge-status ${tone}">${label}</span>`;
+      }
+
       function renderUpcoming(vehicles) {
         const rows = Array.isArray(vehicles) ? vehicles : [];
         el.upcomingCount.textContent = String(rows.length);
@@ -944,7 +987,7 @@
                 <td>${vehicle.lineplanningnumber || "—"}</td>
                 <td class="eta">${formatEta(vehicle.etaSeconds)}</td>
                 <td>${vehicle.expectedArrivalTime || "—"}</td>
-                <td>${vehicle.tripStatus || "—"}</td>
+                <td>${statusBadge(vehicle.status || vehicle.tripStatus)}</td>
               </tr>
             `;
           })
@@ -1102,6 +1145,7 @@
       function renderConfig(config, zmq) {
         const tcpItems = [
           ["Stop filter", (zmq.userstopcodes || []).join(", ") || "all"],
+          ["Line filter", (zmq.lineplanningnumbers || []).join(", ") || "all"],
           ["Topic prefix", config?.rotterdamTopicPrefix || "-"],
           ["No-train initial", `${config?.noTrainInitialDelayMs || "-"} ms`],
           ["No-train after depart", `${config?.noTrainAfterDepartureMs || "-"} ms`],
