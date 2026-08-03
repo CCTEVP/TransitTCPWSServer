@@ -56,6 +56,9 @@ const WS_CHANNEL_CONTROL = "control";
 const WS_CHANNEL_CONTENT = "content";
 const ROTTERDAM_TOPIC_PREFIX = process.env.ROTTERDAM_TOPIC_PREFIX || "/RIG/";
 const USERSTOPCODES = envList("USERSTOPCODES").map((code) => code.toLowerCase());
+// GOVI/BISON wall-clock times are Dutch local time, not the server TZ (UTC on Cloud Run).
+const TRANSIT_TIMEZONE =
+  process.env.TRANSIT_TIMEZONE || "Europe/Amsterdam";
 const NO_TRAIN_INITIAL_DELAY_MS = Number(
   process.env.NO_TRAIN_INITIAL_DELAY_MS || 30000,
 );
@@ -659,33 +662,128 @@ function asUpperString(value) {
   return String(value || "").toUpperCase();
 }
 
+function parseDayParts(dayValue, fallbackIso) {
+  const raw = String(dayValue || fallbackIso || "");
+  const dayMatch = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (dayMatch) {
+    return {
+      year: Number(dayMatch[1]),
+      month: Number(dayMatch[2]),
+      day: Number(dayMatch[3]),
+    };
+  }
+
+  const fallback = new Date(fallbackIso || Date.now());
+  if (Number.isNaN(fallback.getTime())) {
+    return null;
+  }
+
+  // Use transit timezone calendar day, not the server's local day.
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: TRANSIT_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+      .formatToParts(fallback)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+  };
+}
+
+function zonedWallTimeToUtcDate(year, month, day, hour, minute, second, timeZone) {
+  // Convert a wall-clock time in `timeZone` to a UTC Date without depending on
+  // process TZ (Cloud Run is UTC; GOVI times are Europe/Amsterdam).
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+
+  const parts = Object.fromEntries(
+    dtf
+      .formatToParts(new Date(utcGuess))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+
+  const asUtcFromParts = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  );
+
+  return new Date(utcGuess - (asUtcFromParts - utcGuess));
+}
+
 function toDateOnDay(timeValue, dayValue, fallbackIso) {
   if (!timeValue || typeof timeValue !== "string") {
     return null;
   }
 
-  // Handle fully qualified date-times first.
-  const direct = new Date(timeValue);
-  if (!Number.isNaN(direct.getTime())) {
-    return direct;
+  const trimmed = timeValue.trim();
+
+  // Fully qualified ISO with explicit zone/offset — trust native parsing.
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    const direct = new Date(trimmed);
+    if (!Number.isNaN(direct.getTime())) {
+      return direct;
+    }
   }
 
-  // Accept HH:mm[:ss] values by anchoring them to operation/reception date.
-  const match = timeValue.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  // Date-time without zone: treat wall time as TRANSIT_TIMEZONE.
+  const dateTimeMatch = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/,
+  );
+  if (dateTimeMatch) {
+    return zonedWallTimeToUtcDate(
+      Number(dateTimeMatch[1]),
+      Number(dateTimeMatch[2]),
+      Number(dateTimeMatch[3]),
+      Number(dateTimeMatch[4]),
+      Number(dateTimeMatch[5]),
+      Number(dateTimeMatch[6] || 0),
+      TRANSIT_TIMEZONE,
+    );
+  }
+
+  // Accept HH:mm[:ss] values by anchoring them to operation/reception date
+  // in the transit timezone (not the server local timezone).
+  const match = trimmed.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
   if (!match) {
     return null;
   }
 
-  const base = new Date(dayValue || fallbackIso);
-  if (Number.isNaN(base.getTime())) {
+  const dayParts = parseDayParts(dayValue, fallbackIso);
+  if (!dayParts) {
     return null;
   }
 
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const seconds = Number(match[3] || 0);
-  base.setHours(hours, minutes, seconds, 0);
-  return base;
+  return zonedWallTimeToUtcDate(
+    dayParts.year,
+    dayParts.month,
+    dayParts.day,
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3] || 0),
+    TRANSIT_TIMEZONE,
+  );
 }
 
 function extractExpectedArrivalMs(row, receivedAt) {
