@@ -926,15 +926,17 @@
           return;
         }
 
+        const goviLive = rows.some((vehicle) => vehicle.goviLive);
         const body = rows
           .map((vehicle) => {
             const nearestClass = vehicle.isNearest ? "nearest" : "";
             const nearestBadge = vehicle.isNearest
               ? '<span class="badge-nearest">nearest</span>'
               : "";
-            const cachedBadge = vehicle.cached
-              ? '<span class="badge-cached">cached</span>'
-              : "";
+            const cachedBadge =
+              !goviLive || vehicle.cached
+                ? '<span class="badge-cached">cached</span>'
+                : "";
             return `
               <tr class="${nearestClass}">
                 <td>${vehicle.rank || ""}</td>
@@ -948,7 +950,7 @@
           })
           .join("");
 
-        const cacheNote = rows.some((vehicle) => vehicle.cached)
+        const cacheNote = !goviLive
           ? `<div class="emptyMsg" style="border-bottom:1px solid rgba(0,0,0,.06)">GOVI standby — counting down from last ExpectedArrivalTime</div>`
           : "";
 

@@ -1434,11 +1434,11 @@ function getUpcomingVehiclesSnapshot() {
   const goviLive = isGoviFeedLive();
 
   for (const stopCode of stops) {
-    const sorted = getSortedUpcoming(stopCode, { includeOverdue: true }).slice(
+    const sorted = getSortedUpcoming(stopCode, { includeOverdue: false }).slice(
       0,
       UPCOMING_DISPLAY_LIMIT,
     );
-    const nearestIndex = sorted.findIndex((entry) => entry.etaSeconds > 0);
+    const nearestIndex = sorted.length > 0 ? 0 : -1;
     sorted.forEach((entry, index) => {
       vehicles.push({
         rank: index + 1,
@@ -1745,6 +1745,11 @@ function processTurboMessage(topic, decoded, receivedAt) {
 
     for (const stopCode of touchedStops) {
       reconcileUpcomingArrivals(stopCode);
+    }
+
+    // First relevant GOVI forecast ends bootstrap dual-subscribe → GOVI hunting.
+    if (!feedSwitchingActive && matchingRows.length > 0) {
+      setFeedPhase("govi", "govi-forecast");
     }
 
     const nearestJourneyKeys = new Set();
