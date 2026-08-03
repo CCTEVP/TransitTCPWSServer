@@ -734,7 +734,7 @@
               </span>
             </div>
             <div class="panel-body">
-              <p class="card-sub">Nearest upcoming vehicles at this stop, with live ETA and status.</p>
+              <p class="card-sub">Nearest trams at Beurs (HA1161 / HA1162 / HA1141 / HA1142), with live ETA and status.</p>
               <div id="upcomingPanel" class="upcoming-panel">
                 <div class="emptyMsg">No upcoming vehicles yet...</div>
               </div>
@@ -967,11 +967,15 @@
               vehicle.lineLabel ||
               vehicle.lineplanningnumber ||
               "—";
+            const stopCode = String(vehicle.stopCode || "").toUpperCase() || "—";
+            const dest = vehicle.destinationName || "—";
             return `
               <tr class="${nearestClass}">
                 <td>${vehicle.rank || ""}</td>
                 <td><strong>${vehicle.vehiclenumber || "—"}</strong>${nearestBadge}</td>
                 <td>${lineLabel}</td>
+                <td>${stopCode}</td>
+                <td>${dest}</td>
                 <td class="eta">${formatEta(vehicle.etaSeconds)}</td>
                 <td>${vehicle.expectedArrivalTime || "—"}</td>
                 <td>${statusBadge(vehicle.status || vehicle.tripStatus)}</td>
@@ -987,6 +991,8 @@
                 <th>#</th>
                 <th>Vehicle</th>
                 <th>Line</th>
+                <th>Stop</th>
+                <th>Destination</th>
                 <th>ETA</th>
                 <th>Expected</th>
                 <th>Status</th>
@@ -1126,7 +1132,8 @@
 
       function renderConfig(config, zmq) {
         const tcpItems = [
-          ["Stop filter", (zmq.userstopcodes || []).join(", ") || "all"],
+          ["Stop filter (RIG)", (zmq.userstopcodes || []).join(", ") || "all"],
+          ["Stop filter (GOVI)", (zmq.goviUserstopcodes || zmq.userstopcodes || []).join(", ") || "all"],
           ["Line filter", (zmq.lineplanningnumbers || []).join(", ") || "all"],
           ["Topic prefix", config?.rotterdamTopicPrefix || "-"],
           ["No-train initial", `${config?.noTrainInitialDelayMs || "-"} ms`],

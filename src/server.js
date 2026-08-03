@@ -56,17 +56,25 @@ const WS_CHANNEL_CONTROL = "control";
 const WS_CHANNEL_CONTENT = "content";
 const ROTTERDAM_TOPIC_PREFIX = process.env.ROTTERDAM_TOPIC_PREFIX || "/RIG/";
 const USERSTOPCODES = envList("USERSTOPCODES").map((code) => code.toLowerCase());
-// Empty = all lines. Values match LinePlanningNumber (e.g. 1682,1702 — not public line letters).
+// GOVI/Turbo stop filter. Empty env → reuse USERSTOPCODES. Set explicitly for quay split.
+const GOVI_USERSTOPCODES = (
+  process.env.GOVI_USERSTOPCODES === undefined
+    ? USERSTOPCODES
+    : envList("GOVI_USERSTOPCODES").map((code) => code.toLowerCase())
+);
+// Empty = all lines. Values match LinePlanningNumber (not public line numbers).
 const LINEPLANNINGNUMBERS = envList("LINEPLANNINGNUMBERS").map((code) =>
   String(code).toLowerCase(),
 );
-// RET metro LinePlanningNumber → public letter (Beurs A–E).
-const RET_METRO_LINE_LETTERS = {
-  1682: "A",
-  1683: "B",
-  1684: "C",
-  1702: "D",
-  1704: "E",
+// LinePlanningNumber → LinePublicNumber fallback when feed omits public number.
+const RET_BEURS_TRAM_PUBLIC = {
+  1702: "1",
+  1682: "3",
+  43: "4",
+  1683: "5",
+  1703: "6",
+  44: "7",
+  1704: "11",
 };
 // GOVI/BISON wall-clock times are Dutch local time, not the server TZ (UTC on Cloud Run).
 const TRANSIT_TIMEZONE =
@@ -170,6 +178,7 @@ const bridgeStatus = {
     bytesRelevant: 0,
     lastError: null,
     userstopcodes: USERSTOPCODES,
+    goviUserstopcodes: GOVI_USERSTOPCODES,
     lineplanningnumbers: LINEPLANNINGNUMBERS,
   },
   websocket: {
@@ -1029,13 +1038,13 @@ function isAllowedRetCommand(commandMessage) {
   );
 }
 
-function matchesUserStopCode(row) {
-  if (USERSTOPCODES.length === 0) {
+function matchesUserStopCode(row, stopList = USERSTOPCODES) {
+  if (stopList.length === 0) {
     return true;
   }
 
   const stopCode = String(getRowValue(row, "userstopcode") || "").toLowerCase();
-  return USERSTOPCODES.includes(stopCode);
+  return stopList.includes(stopCode);
 }
 
 function matchesLinePlanningNumber(row) {
@@ -1047,8 +1056,8 @@ function matchesLinePlanningNumber(row) {
   return Boolean(line) && LINEPLANNINGNUMBERS.includes(line);
 }
 
-function matchesStopAndLine(row) {
-  return matchesUserStopCode(row) && matchesLinePlanningNumber(row);
+function matchesStopAndLine(row, stopList = USERSTOPCODES) {
+  return matchesUserStopCode(row, stopList) && matchesLinePlanningNumber(row);
 }
 
 function filterBaseCommandsByStop(baseCommands) {
@@ -1069,13 +1078,13 @@ function filterBaseCommandsByStop(baseCommands) {
   });
 }
 
-function xmlContainsTrackedStop(xmlText) {
-  if (USERSTOPCODES.length === 0) {
+function xmlContainsTrackedStop(xmlText, stopList = USERSTOPCODES) {
+  if (stopList.length === 0) {
     return true;
   }
 
   const lowerText = String(xmlText || "").toLowerCase();
-  return USERSTOPCODES.some((stopCode) => lowerText.includes(stopCode));
+  return stopList.some((stopCode) => lowerText.includes(stopCode));
 }
 
 function getStopCodeFromCommand(commandMessage) {
@@ -1308,7 +1317,7 @@ function extractDatedPassTimes(parsedXml) {
 
 function handleForecastUpdate(topic, row, receivedAt) {
   const stopCode = String(getRowValue(row, "userstopcode") || "").toLowerCase();
-  if (!matchesStopAndLine(row)) {
+  if (!matchesStopAndLine(row, GOVI_USERSTOPCODES)) {
     return null;
   }
 
@@ -1344,6 +1353,9 @@ function handleForecastUpdate(topic, row, receivedAt) {
     vehiclenumber: entity.vehiclenumber || null,
     lineplanningnumber: entity.lineplanningnumber || null,
     linepublicnumber: entity.linepublicnumber || null,
+    linedirection: getRowValue(row, "linedirection") || null,
+    destinationName:
+      getRowValue(row, ["destinationname", "destinationname50"]) || null,
     journeynumber: entity.journeynumber || null,
     dataownercode: entity.dataownercode || null,
     entity,
@@ -1421,14 +1433,15 @@ function displayStatusForUpcoming(entry) {
 function formatUpcomingLineLabel(lineplanningnumber, linepublicnumber) {
   const planning = String(lineplanningnumber || "").trim();
   const fromFeed = String(linepublicnumber || "").trim();
-  const letter =
-    (/^[A-Za-z]$/.test(fromFeed) ? fromFeed.toUpperCase() : null) ||
-    RET_METRO_LINE_LETTERS[planning] ||
+  const pub =
+    fromFeed ||
+    RET_BEURS_TRAM_PUBLIC[planning] ||
+    RET_BEURS_TRAM_PUBLIC[planning.toLowerCase()] ||
     null;
-  if (letter && planning) {
-    return `${letter} (${planning})`;
+  if (pub && planning) {
+    return `${pub} (${planning})`;
   }
-  return letter || planning || null;
+  return pub || planning || null;
 }
 
 function lifecycleSortRank(entry) {
@@ -1525,9 +1538,11 @@ function getSortedUpcoming(stopCode, { includeOverdue = true } = {}) {
 
 function getUpcomingVehiclesSnapshot() {
   const stops =
-    USERSTOPCODES.length > 0
-      ? USERSTOPCODES
-      : [...upcomingByStop.keys()];
+    GOVI_USERSTOPCODES.length > 0
+      ? GOVI_USERSTOPCODES
+      : USERSTOPCODES.length > 0
+        ? USERSTOPCODES
+        : [...upcomingByStop.keys()];
   const vehicles = [];
   const goviLive = isGoviFeedLive();
 
@@ -1558,6 +1573,8 @@ function getUpcomingVehiclesSnapshot() {
           entry.lineplanningnumber,
           entry.linepublicnumber,
         ),
+        linedirection: entry.linedirection || null,
+        destinationName: entry.destinationName || null,
         journeynumber: entry.journeynumber,
         journeyKey: entry.journeyKey,
         tripStatus: entry.tripStatus || null,
@@ -2248,13 +2265,20 @@ async function startZmqBridge() {
 
   if (USERSTOPCODES.length > 0) {
     console.log(
-      `[ZMQ] Filtering activity to userstopcodes: ${USERSTOPCODES.join(", ")}`,
+      `[ZMQ] Filtering RIG activity to userstopcodes: ${USERSTOPCODES.join(", ")}`,
+    );
+  }
+  if (GOVI_USERSTOPCODES.length > 0) {
+    console.log(
+      `[ZMQ] Filtering GOVI activity to userstopcodes: ${GOVI_USERSTOPCODES.join(", ")}`,
     );
   }
   if (LINEPLANNINGNUMBERS.length > 0) {
     console.log(
       `[ZMQ] Filtering activity to lineplanningnumbers: ${LINEPLANNINGNUMBERS.join(", ")}`,
     );
+  } else {
+    console.log(`[ZMQ] Line filter off (all LinePlanningNumbers at stop filter)`);
   }
 
   for await (const msg of subscriber) {
@@ -2394,10 +2418,10 @@ async function startTurboBridge() {
       continue;
     }
 
-    // Early reject: skip CTX/XML parse when stop filter is not present.
+    // Early reject: skip CTX/XML parse when GOVI stop filter is not present.
     if (
-      USERSTOPCODES.length > 0 &&
-      (!decoded.text || !xmlContainsTrackedStop(decoded.text))
+      GOVI_USERSTOPCODES.length > 0 &&
+      (!decoded.text || !xmlContainsTrackedStop(decoded.text, GOVI_USERSTOPCODES))
     ) {
       bridgeStatus.zmq.turbo.totalMessages += 1;
       bridgeStatus.zmq.turbo.ignoredMessages += 1;
@@ -2430,7 +2454,7 @@ async function startTurboBridge() {
       encoding: decoded.encoding,
       format: decoded.text?.trimStart().startsWith("<") ? "xml" : "ctx",
       matchingRowCount: matchingRows.length,
-      userstopcodes: USERSTOPCODES,
+      userstopcodes: GOVI_USERSTOPCODES,
       payloadBytes: payloadBuffer.length,
       matchingRows,
       payloadPreview: JSON.stringify(matchingRows, null, 2).slice(0, 2000),
@@ -2485,9 +2509,11 @@ server.listen(PORT, () => {
   // Keep ETA countdowns / nearest ARRIVING working from cache while GOVI is standby.
   setInterval(() => {
     const stops =
-      USERSTOPCODES.length > 0
-        ? USERSTOPCODES
-        : [...upcomingByStop.keys()];
+      GOVI_USERSTOPCODES.length > 0
+        ? GOVI_USERSTOPCODES
+        : USERSTOPCODES.length > 0
+          ? USERSTOPCODES
+          : [...upcomingByStop.keys()];
     for (const stopCode of stops) {
       if (!upcomingByStop.has(stopCode)) {
         continue;
