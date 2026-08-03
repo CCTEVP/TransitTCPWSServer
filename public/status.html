@@ -734,7 +734,7 @@
               </span>
             </div>
             <div class="panel-body">
-              <p class="card-sub">Next 3 GOVI forecasts (negative ETA kept). Status: Driving → Arriving → Arrived → Departing via RIG; row clears on no-train or 30s after departed.</p>
+              <p class="card-sub">Nearest upcoming vehicles at this stop, with live ETA and status.</p>
               <div id="upcomingPanel" class="upcoming-panel">
                 <div class="emptyMsg">No upcoming vehicles yet...</div>
               </div>
@@ -980,13 +980,7 @@
           })
           .join("");
 
-        const goviLive = rows.some((vehicle) => vehicle.goviLive);
-        const cacheNote = !goviLive
-          ? `<div class="emptyMsg" style="border-bottom:1px solid rgba(0,0,0,.06)">GOVI standby — counting down from last ExpectedArrivalTime</div>`
-          : "";
-
         el.upcomingPanel.innerHTML = `
-          ${cacheNote}
           <table class="upcoming-table">
             <thead>
               <tr>
