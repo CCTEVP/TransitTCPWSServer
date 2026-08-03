@@ -46,7 +46,7 @@ const ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS = Number(
 // Emit RET_TRAIN_ARRIVING_15S only when forecast ETA is at/below this (seconds).
 const ARRIVING_ETA_SEC = Number(process.env.ARRIVING_ETA_SEC || 15);
 const UPCOMING_STALE_MS = Number(process.env.UPCOMING_STALE_MS || 120000);
-const UPCOMING_DISPLAY_LIMIT = Number(process.env.UPCOMING_DISPLAY_LIMIT || 3);
+const UPCOMING_DISPLAY_LIMIT = Number(process.env.UPCOMING_DISPLAY_LIMIT || 5);
 // Keep cached forecasts this long after expected arrival while GOVI is off.
 const UPCOMING_OVERDUE_KEEP_SEC = Number(
   process.env.UPCOMING_OVERDUE_KEEP_SEC || 90,
@@ -1543,50 +1543,59 @@ function getUpcomingVehiclesSnapshot() {
       : USERSTOPCODES.length > 0
         ? USERSTOPCODES
         : [...upcomingByStop.keys()];
-  const vehicles = [];
   const goviLive = isGoviFeedLive();
 
+  const merged = [];
   for (const stopCode of stops) {
-    const sorted = getSortedUpcoming(stopCode, { includeOverdue: true }).slice(
-      0,
-      UPCOMING_DISPLAY_LIMIT,
-    );
-    const nearestIndex = sorted.findIndex(
-      (entry) =>
-        entry.etaSeconds > 0 && displayStatusForUpcoming(entry) === "Driving",
-    );
-    sorted.forEach((entry, index) => {
-      vehicles.push({
-        rank: index + 1,
-        isNearest:
-          index === nearestIndex ||
-          (nearestIndex < 0 &&
-            index === 0 &&
-            entry.displayStatus === "Arriving"),
-        cached: Boolean(entry.cached),
-        goviLive,
-        stopCode: entry.stopCode,
-        vehiclenumber: entry.vehiclenumber,
-        lineplanningnumber: entry.lineplanningnumber,
-        linepublicnumber: entry.linepublicnumber || null,
-        lineLabel: formatUpcomingLineLabel(
-          entry.lineplanningnumber,
-          entry.linepublicnumber,
-        ),
-        linedirection: entry.linedirection || null,
-        destinationName: entry.destinationName || null,
-        journeynumber: entry.journeynumber,
-        journeyKey: entry.journeyKey,
-        tripStatus: entry.tripStatus || null,
-        status: entry.displayStatus || "Driving",
-        etaSeconds: entry.etaSeconds,
-        expectedArrivalTime: entry.expectedArrivalTime,
-        updatedAt: new Date(entry.updatedAtMs).toISOString(),
-      });
-    });
+    merged.push(...getSortedUpcoming(stopCode, { includeOverdue: true }));
   }
 
-  return vehicles;
+  // Global order across all stops (same ranking as per-stop list).
+  merged.sort((a, b) => {
+    const lifeA = lifecycleSortRank(a);
+    const lifeB = lifecycleSortRank(b);
+    if (lifeA !== lifeB) {
+      return lifeA - lifeB;
+    }
+    if (a.etaSeconds !== b.etaSeconds) {
+      return a.etaSeconds - b.etaSeconds;
+    }
+    return String(a.vehiclenumber || "").localeCompare(
+      String(b.vehiclenumber || ""),
+    );
+  });
+
+  const limited = merged.slice(0, UPCOMING_DISPLAY_LIMIT);
+  const nearestIndex = limited.findIndex(
+    (entry) =>
+      entry.etaSeconds > 0 && displayStatusForUpcoming(entry) === "Driving",
+  );
+
+  return limited.map((entry, index) => ({
+    rank: index + 1,
+    isNearest:
+      index === nearestIndex ||
+      (nearestIndex < 0 && index === 0 && entry.displayStatus === "Arriving"),
+    cached: Boolean(entry.cached),
+    goviLive,
+    stopCode: entry.stopCode,
+    vehiclenumber: entry.vehiclenumber,
+    lineplanningnumber: entry.lineplanningnumber,
+    linepublicnumber: entry.linepublicnumber || null,
+    lineLabel: formatUpcomingLineLabel(
+      entry.lineplanningnumber,
+      entry.linepublicnumber,
+    ),
+    linedirection: entry.linedirection || null,
+    destinationName: entry.destinationName || null,
+    journeynumber: entry.journeynumber,
+    journeyKey: entry.journeyKey,
+    tripStatus: entry.tripStatus || null,
+    status: entry.displayStatus || "Driving",
+    etaSeconds: entry.etaSeconds,
+    expectedArrivalTime: entry.expectedArrivalTime,
+    updatedAt: new Date(entry.updatedAtMs).toISOString(),
+  }));
 }
 
 function findUpcomingEntry(stopCode, journeyKey, vehiclenumber) {
