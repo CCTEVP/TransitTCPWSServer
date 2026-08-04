@@ -1,4 +1,6 @@
 (function () {
+  const DESIGN_WIDTH = 1080;
+  const DESIGN_HEIGHT = 1920;
   const DEFAULT_API = "https://dynode-main-8eca196.zuplo.app";
   const STATUS_LABELS = {
     A: "Arrived",
@@ -16,12 +18,35 @@
     Number(params.get("refresh") || 180) || 180,
   );
 
+  const boardEl = document.getElementById("board");
+  const boardFrameEl = document.getElementById("boardFrame");
   const gateEl = document.getElementById("gate");
   const iataEl = document.getElementById("iata");
   const contentEl = document.getElementById("content");
   const clockEl = document.getElementById("clock");
   const eyebrowEl = document.getElementById("eyebrow");
   const headlineEl = document.getElementById("headline");
+
+  function fitBoardToViewport() {
+    if (!boardEl || !boardFrameEl) return;
+    const scale = Math.min(
+      window.innerWidth / DESIGN_WIDTH,
+      window.innerHeight / DESIGN_HEIGHT,
+    );
+    boardFrameEl.style.width = `${DESIGN_WIDTH * scale}px`;
+    boardFrameEl.style.height = `${DESIGN_HEIGHT * scale}px`;
+    boardEl.style.transform = `scale(${scale})`;
+  }
+
+  let fitFrame = 0;
+  function scheduleFit() {
+    cancelAnimationFrame(fitFrame);
+    fitFrame = requestAnimationFrame(fitBoardToViewport);
+  }
+
+  fitBoardToViewport();
+  window.addEventListener("resize", scheduleFit);
+  window.addEventListener("orientationchange", scheduleFit);
 
   function getPlayerQuery() {
     const resourceId = params

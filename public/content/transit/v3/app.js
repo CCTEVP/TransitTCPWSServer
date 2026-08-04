@@ -1,6 +1,7 @@
 const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/content`;
 const RECONNECT_DELAY_MS = 3000;
-const HEARTBEAT_TIMEOUT_MS = 35000;
+// Must be > server WS_PING_INTERVAL_MS (default 25s). JSON heartbeats reset this.
+const HEARTBEAT_TIMEOUT_MS = 70000;
 
 const commandVideoMap = {
   RET_NO_TRAIN: "./videos/no-train_1080x1920.mp4",
@@ -207,18 +208,33 @@ function onPlaybackFinished() {
 function resetHeartbeat() {
   clearTimeout(heartbeatTimer);
   heartbeatTimer = setTimeout(() => {
+    // No app-level traffic (commands/heartbeats). Force a clean reconnect.
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
     console.log("[WS] No heartbeat received, reconnecting...");
-    if (socket) socket.close();
+    try {
+      socket.close();
+    } catch {
+      // ignore
+    }
   }, HEARTBEAT_TIMEOUT_MS);
 }
 
 function cleanup() {
   clearTimeout(heartbeatTimer);
+  heartbeatTimer = null;
   socket = null;
 }
 
 function connect() {
-  if (socket && socket.readyState === WebSocket.OPEN) return;
+  if (
+    socket &&
+    (socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING)
+  ) {
+    return;
+  }
 
   setConnectionState(false);
 
@@ -231,6 +247,8 @@ function connect() {
   }
 
   socket.addEventListener("open", () => {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
     setConnectionState(true);
     resetHeartbeat();
     console.log("[WS] Connected to", WS_URL);
@@ -246,6 +264,7 @@ function connect() {
       return;
     }
 
+    // heartbeat / bridge-status / etc. only keep the socket alive
     if (msg.type === "transit-command" && isKnownCommand(msg.command)) {
       enqueueCommand(msg.command);
     }
@@ -258,7 +277,9 @@ function connect() {
   });
 
   socket.addEventListener("error", () => {
-    if (socket) socket.close();
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close();
+    }
   });
 }
 

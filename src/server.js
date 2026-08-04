@@ -614,13 +614,33 @@ wss.on("connection", (socket, request) => {
 });
 
 setInterval(() => {
+  const heartbeat = JSON.stringify({
+    type: "heartbeat",
+    serverTime: new Date().toISOString(),
+  });
+
   for (const client of wss.clients) {
+    if (client.readyState !== WebSocket.OPEN) {
+      continue;
+    }
+
     if (!client.isAlive) {
       client.terminate();
       continue;
     }
+
     client.isAlive = false;
-    client.ping();
+    // Protocol ping (browser-handled) + JSON heartbeat (visible to client JS).
+    try {
+      client.ping();
+    } catch {
+      // ignore
+    }
+    try {
+      client.send(heartbeat);
+    } catch {
+      // ignore
+    }
   }
 }, WS_PING_INTERVAL_MS);
 
