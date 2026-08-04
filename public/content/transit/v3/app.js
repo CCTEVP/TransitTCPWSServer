@@ -4,10 +4,10 @@ const HEARTBEAT_TIMEOUT_MS = 35000;
 const LAST_COMMAND_KEY = "transitDisplay.lastCommand";
 
 const commandVideoMap = {
-  RET_NO_TRAIN: "/content/videos/no-train_1080x1920.mp4",
-  RET_TRAIN_ARRIVING_15S: "/content/videos/train-arriving_1080x1920.mp4",
-  RET_TRAIN_ARRIVED: "/content/videos/train-arrived_1080x1920.mp4",
-  RET_TRAIN_DEPARTED: "/content/videos/train-departed_1080x1920.mp4",
+  RET_NO_TRAIN: "./videos/no-train_1080x1920.mp4",
+  RET_TRAIN_ARRIVING_15S: "./videos/train-arriving_1080x1920.mp4",
+  RET_TRAIN_ARRIVED: "./videos/train-arrived_1080x1920.mp4",
+  RET_TRAIN_DEPARTED: "./videos/train-departed_1080x1920.mp4",
 };
 
 const videoA = document.getElementById("videoA");
