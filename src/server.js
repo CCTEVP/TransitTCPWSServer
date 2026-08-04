@@ -62,10 +62,23 @@ const GOVI_USERSTOPCODES = (
     ? USERSTOPCODES
     : envList("GOVI_USERSTOPCODES").map((code) => code.toLowerCase())
 );
-// Empty = all lines. Values match LinePlanningNumber (not public line numbers).
+// Empty = all lines. Exact codes and wildcards (# = one digit, * = any run).
+// Example: 1### matches 1682/1702/… ; combine with literals: 1###,43,44
 const LINEPLANNINGNUMBERS = envList("LINEPLANNINGNUMBERS").map((code) =>
   String(code).toLowerCase(),
 );
+const LINEPLANNING_PATTERNS = LINEPLANNINGNUMBERS.map((pattern) => {
+  if (!/[!*#?]/.test(pattern)) {
+    return { type: "exact", value: pattern };
+  }
+  // # = one digit; * = any chars; ? = one char; escape other regex meta
+  const source = pattern
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*")
+    .replace(/\?/g, ".")
+    .replace(/#/g, "\\d");
+  return { type: "regex", value: new RegExp(`^${source}$`, "i") };
+});
 // LinePlanningNumber → LinePublicNumber fallback when feed omits public number.
 const RET_BEURS_TRAM_PUBLIC = {
   1702: "1",
@@ -1048,12 +1061,22 @@ function matchesUserStopCode(row, stopList = USERSTOPCODES) {
 }
 
 function matchesLinePlanningNumber(row) {
-  if (LINEPLANNINGNUMBERS.length === 0) {
+  if (LINEPLANNING_PATTERNS.length === 0) {
     return true;
   }
 
-  const line = String(getRowValue(row, "lineplanningnumber") || "").toLowerCase();
-  return Boolean(line) && LINEPLANNINGNUMBERS.includes(line);
+  const line = String(getRowValue(row, "lineplanningnumber") || "").trim();
+  if (!line) {
+    return false;
+  }
+
+  const lower = line.toLowerCase();
+  return LINEPLANNING_PATTERNS.some((pattern) => {
+    if (pattern.type === "exact") {
+      return lower === pattern.value;
+    }
+    return pattern.value.test(line);
+  });
 }
 
 function matchesStopAndLine(row, stopList = USERSTOPCODES) {
