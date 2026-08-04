@@ -127,8 +127,9 @@ app.get(["/status", "/dashboard/status"], (req, res) => {
   res.redirect(301, "/");
 });
 app.get(["/content", "/content/"], (req, res) => {
-  res.sendFile(path.join(contentDir, "index.html"));
+  res.sendFile(path.join(contentDir, "transit", "v3", "index.html"));
 });
+app.use("/content", express.static(path.join(contentDir, "transit", "v3")));
 app.use("/content", express.static(contentDir));
 app.use(express.static(publicDir));
 
@@ -149,6 +150,8 @@ const lastBroadcastKeyByChannel = {
   [WS_CHANNEL_CONTENT]: null,
   [WS_CHANNEL_CONTROL]: null,
 };
+// Last RET command sent to /content clients; replayed to new connections.
+let lastContentCommand = null;
 
 const bridgeStatus = {
   startedAt: new Date().toISOString(),
@@ -500,6 +503,10 @@ function broadcastJson(obj) {
   const outbound =
     obj?.type === "transit-command" ? toClientCommandMessage(obj) : obj;
 
+  if (outbound?.type === "transit-command" && outbound.command) {
+    lastContentCommand = outbound;
+  }
+
   if (shouldSkipDuplicateBroadcast(WS_CHANNEL_CONTENT, outbound)) {
     return 0;
   }
@@ -567,6 +574,19 @@ wss.on("connection", (socket, request) => {
   // Welcome is per-client; do not apply channel-wide broadcast dedupe.
 
   if (isContentChannel(channel)) {
+    if (lastContentCommand) {
+      // Replay current display state to late joiners / refreshes.
+      const snapshot = JSON.stringify(lastContentCommand);
+      socket.send(snapshot);
+      const meta = wsClientMeta.get(socket);
+      if (meta) {
+        meta.lastSentAt = new Date().toISOString();
+        meta.sentCount += 1;
+        meta.sentBytes += Buffer.byteLength(snapshot);
+        bridgeStatus.websocket.contentBytesSent += Buffer.byteLength(snapshot);
+      }
+    }
+
     emitWsEvent("client-connected", {
       channel,
       clientId,

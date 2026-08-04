@@ -1,7 +1,6 @@
 const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/content`;
 const RECONNECT_DELAY_MS = 3000;
 const HEARTBEAT_TIMEOUT_MS = 35000;
-const LAST_COMMAND_KEY = "transitDisplay.lastCommand";
 
 const commandVideoMap = {
   RET_NO_TRAIN: "./videos/no-train_1080x1920.mp4",
@@ -42,27 +41,6 @@ function isKnownCommand(command) {
   return Boolean(commandVideoMap[command]);
 }
 
-function loadLastCommand() {
-  try {
-    const command = localStorage.getItem(LAST_COMMAND_KEY);
-    return isKnownCommand(command) ? command : "RET_NO_TRAIN";
-  } catch {
-    return "RET_NO_TRAIN";
-  }
-}
-
-function saveLastCommand(command) {
-  if (!isKnownCommand(command)) {
-    return;
-  }
-
-  try {
-    localStorage.setItem(LAST_COMMAND_KEY, command);
-  } catch {
-    // Ignore private-mode / quota errors.
-  }
-}
-
 function swapActiveVideo(nextVideo) {
   activeVideo.classList.remove("active");
   inactiveVideo.classList.remove("active");
@@ -101,7 +79,6 @@ function startVideoPlayback(video, command, onEnded) {
       swapActiveVideo(video);
       isPlaying = true;
       currentCommand = command;
-      saveLastCommand(command);
       if (command !== "RET_NO_TRAIN") {
         isInitialNoTrain = false;
       }
@@ -293,7 +270,5 @@ function scheduleReconnect() {
   }, RECONNECT_DELAY_MS);
 }
 
-const startupCommand = loadLastCommand();
-isInitialNoTrain = startupCommand === "RET_NO_TRAIN";
-enqueueCommand(startupCommand);
+// Wait for the server to push current state (and later live commands).
 connect();
