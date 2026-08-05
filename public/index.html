@@ -694,7 +694,9 @@
       <div class="topbar">
         <div class="brand">
           <h1>Transit Bridge</h1>
-          <p class="brand-sub">Realtime TCP ingest → WebSocket display bridge</p>
+          <p class="brand-sub">
+            Realtime TCP ingest → WebSocket display bridge
+          </p>
         </div>
         <div class="top-actions">
           <button id="refreshNow" class="btn" type="button">Refresh</button>
@@ -718,13 +720,20 @@
               </span>
             </button>
             <div class="panel-body">
-              <p class="card-sub">Inbound NDOV streams filtered to configured stops.</p>
+              <p class="card-sub">
+                Inbound NDOV streams filtered to configured stops.
+              </p>
               <div id="feedsPanel" class="source-grid"></div>
             </div>
           </section>
 
           <section class="panel" data-panel>
-            <div class="panel-toggle" role="button" tabindex="0" aria-expanded="true">
+            <div
+              class="panel-toggle"
+              role="button"
+              tabindex="0"
+              aria-expanded="true"
+            >
               <span class="panel-toggle-title">
                 <span class="chevron" aria-hidden="true"></span>
                 <h2>Coming vehicles</h2>
@@ -734,7 +743,9 @@
               </span>
             </div>
             <div class="panel-body">
-              <p class="card-sub">Nearest trams at Beurs (HA1161 / HA1162 / HA1141 / HA1142), with live ETA and status.</p>
+              <p class="card-sub">
+                Nearest trams at Beurs (HA1162), with live ETA and status.
+              </p>
               <div id="upcomingPanel" class="upcoming-panel">
                 <div class="emptyMsg">No upcoming vehicles yet...</div>
               </div>
@@ -742,18 +753,27 @@
           </section>
 
           <section class="panel panel-grow" data-panel>
-            <div class="panel-toggle" role="button" tabindex="0" aria-expanded="true">
+            <div
+              class="panel-toggle"
+              role="button"
+              tabindex="0"
+              aria-expanded="true"
+            >
               <span class="panel-toggle-title">
                 <span class="chevron" aria-hidden="true"></span>
                 <h2>Live activity</h2>
               </span>
               <span class="panel-actions">
                 <span id="msgCount" class="chip">0 shown</span>
-                <button id="clearMsgs" class="btn accent" type="button">Clear</button>
+                <button id="clearMsgs" class="btn accent" type="button">
+                  Clear
+                </button>
               </span>
             </div>
             <div class="panel-body">
-              <p class="card-sub">Relevant BISON and KV78Turbo messages for this stop filter.</p>
+              <p class="card-sub">
+                Relevant BISON and KV78Turbo messages for this stop filter.
+              </p>
               <div id="msgFeed" class="msgFeed">
                 <div class="emptyMsg">Waiting for incoming TCP messages...</div>
               </div>
@@ -790,24 +810,35 @@
               </span>
             </button>
             <div class="panel-body">
-              <p class="card-sub">Dashboard monitors control; displays subscribe to content.</p>
+              <p class="card-sub">
+                Dashboard monitors control; displays subscribe to content.
+              </p>
               <div id="channelsPanel" class="source-grid"></div>
             </div>
           </section>
 
           <section class="panel panel-grow" data-panel>
-            <div class="panel-toggle" role="button" tabindex="0" aria-expanded="true">
+            <div
+              class="panel-toggle"
+              role="button"
+              tabindex="0"
+              aria-expanded="true"
+            >
               <span class="panel-toggle-title">
                 <span class="chevron" aria-hidden="true"></span>
                 <h2>Live activity</h2>
               </span>
               <span class="panel-actions">
                 <span id="wsEventCount" class="chip">0 shown</span>
-                <button id="clearWsEvents" class="btn accent" type="button">Clear</button>
+                <button id="clearWsEvents" class="btn accent" type="button">
+                  Clear
+                </button>
               </span>
             </div>
             <div class="panel-body">
-              <p class="card-sub">Commands and events sent to content display clients.</p>
+              <p class="card-sub">
+                Commands and events sent to content display clients.
+              </p>
               <div id="wsEventFeed" class="msgFeed">
                 <div class="emptyMsg">Waiting for broadcast activity...</div>
               </div>
@@ -835,7 +866,11 @@
                   <tbody id="clientsBody"></tbody>
                 </table>
               </div>
-              <ul id="wsConfigList" class="kv-list" style="margin-top: 0.45rem"></ul>
+              <ul
+                id="wsConfigList"
+                class="kv-list"
+                style="margin-top: 0.45rem"
+              ></ul>
             </div>
           </section>
         </div>
@@ -913,7 +948,9 @@
           return '<span class="tag">none</span>';
         }
 
-        return topics.map((topic) => `<span class="tag">${topic}</span>`).join("");
+        return topics
+          .map((topic) => `<span class="tag">${topic}</span>`)
+          .join("");
       }
 
       function kpi(label, valueHtml) {
@@ -964,10 +1001,9 @@
               ? '<span class="badge-nearest">nearest</span>'
               : "";
             const lineLabel =
-              vehicle.lineLabel ||
-              vehicle.lineplanningnumber ||
-              "—";
-            const stopCode = String(vehicle.stopCode || "").toUpperCase() || "—";
+              vehicle.lineLabel || vehicle.lineplanningnumber || "—";
+            const stopCode =
+              String(vehicle.stopCode || "").toUpperCase() || "—";
             const dest = vehicle.destinationName || "—";
             return `
               <tr class="${nearestClass}">
@@ -1006,7 +1042,9 @@
       function renderFeeds(zmq) {
         const bisonState = zmq?.state || "unknown";
         const turbo = zmq?.turbo || {};
-        const turboState = turbo.enabled ? turbo.state || "unknown" : "disabled";
+        const turboState = turbo.enabled
+          ? turbo.state || "unknown"
+          : "disabled";
         const feedPhase = zmq?.feedPhase || "rig";
 
         el.feedsPanel.innerHTML = `
@@ -1133,11 +1171,18 @@
       function renderConfig(config, zmq) {
         const tcpItems = [
           ["Stop filter (RIG)", (zmq.userstopcodes || []).join(", ") || "all"],
-          ["Stop filter (GOVI)", (zmq.goviUserstopcodes || zmq.userstopcodes || []).join(", ") || "all"],
+          [
+            "Stop filter (GOVI)",
+            (zmq.goviUserstopcodes || zmq.userstopcodes || []).join(", ") ||
+              "all",
+          ],
           ["Line filter", (zmq.lineplanningnumbers || []).join(", ") || "all"],
           ["Topic prefix", config?.rotterdamTopicPrefix || "-"],
           ["No-train initial", `${config?.noTrainInitialDelayMs || "-"} ms`],
-          ["No-train after depart", `${config?.noTrainAfterDepartureMs || "-"} ms`],
+          [
+            "No-train after depart",
+            `${config?.noTrainAfterDepartureMs || "-"} ms`,
+          ],
           ["Max payload", config?.maxPayloadBytes || "-"],
           ["Last error", zmq.lastError ? zmq.lastError.message : "none"],
         ];
@@ -1366,7 +1411,9 @@
           };
 
           toggle.addEventListener("click", (event) => {
-            if (event.target.closest("button.btn, a, input, select, textarea")) {
+            if (
+              event.target.closest("button.btn, a, input, select, textarea")
+            ) {
               return;
             }
             setExpanded(panel.classList.contains("is-collapsed"));
