@@ -1178,6 +1178,10 @@
           ],
           ["Line filter", (zmq.lineplanningnumbers || []).join(", ") || "all"],
           ["Topic prefix", config?.rotterdamTopicPrefix || "-"],
+          [
+            "Command ETA offset",
+            `${config?.commandEtaOffsetSec ?? 0}s early`,
+          ],
           ["No-train initial", `${config?.noTrainInitialDelayMs || "-"} ms`],
           [
             "No-train after depart",

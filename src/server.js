@@ -45,6 +45,8 @@ const ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS = Number(
 );
 // Emit RET_TRAIN_ARRIVING_15S only when forecast ETA is at/below this (seconds).
 const ARRIVING_ETA_SEC = Number(process.env.ARRIVING_ETA_SEC || 15);
+// Subtract from true GOVI ETA for ARRIVING/ARRIVED command timing only (dashboard keeps true ETA).
+const COMMAND_ETA_OFFSET_SEC = Number(process.env.COMMAND_ETA_OFFSET_SEC || 0);
 const UPCOMING_STALE_MS = Number(process.env.UPCOMING_STALE_MS || 120000);
 const UPCOMING_DISPLAY_LIMIT = Number(process.env.UPCOMING_DISPLAY_LIMIT || 5);
 // Keep cached forecasts this long after expected arrival while GOVI is off.
@@ -210,6 +212,8 @@ const bridgeStatus = {
     turboEnabled: ZMQ_TURBO_ENABLED,
     turboOnDemand: ZMQ_TURBO_ON_DEMAND,
     turboIdleUnsubscribeMs: ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS,
+    arrivingEtaSec: ARRIVING_ETA_SEC,
+    commandEtaOffsetSec: COMMAND_ETA_OFFSET_SEC,
   },
 };
 
@@ -1485,6 +1489,14 @@ function liveEtaSeconds(entry, nowMs = Date.now()) {
   return null;
 }
 
+/** True GOVI ETA adjusted for early ARRIVING/ARRIVED commands only. */
+function commandEtaSeconds(trueEtaSeconds) {
+  if (!Number.isFinite(trueEtaSeconds)) {
+    return trueEtaSeconds;
+  }
+  return trueEtaSeconds - COMMAND_ETA_OFFSET_SEC;
+}
+
 function isGoviFeedLive() {
   return Boolean(turboSubscribed);
 }
@@ -1809,13 +1821,16 @@ function reconcileUpcomingArrivals(stopCode) {
     return hunting;
   }
 
-  if (nearest.etaSeconds > ARRIVING_ETA_SEC) {
+  const cmdEta = commandEtaSeconds(nearest.etaSeconds);
+
+  if (cmdEta > ARRIVING_ETA_SEC) {
     scheduleArrivingFromEta(
       nearest.topic,
       nearest.baseCommand,
       nearest.etaSeconds,
     );
-  } else if (nearest.etaSeconds > 0 && nearest.etaSeconds <= ARRIVING_ETA_SEC) {
+  } else if (Number.isFinite(cmdEta) && cmdEta <= ARRIVING_ETA_SEC) {
+    // cmdEta <= 0 → ARRIVING with 0s countdown → ARRIVED immediately (already past offset).
     if (nearest.approachKey) {
       clearArrivingTimer(nearest.approachKey);
     }
@@ -1826,7 +1841,7 @@ function reconcileUpcomingArrivals(stopCode) {
       topic: nearest.topic,
       receivedAt: new Date().toISOString(),
       sourceCommand: "KV8_FORECAST_NEAREST",
-      etaSeconds: nearest.etaSeconds,
+      etaSeconds: Math.max(0, cmdEta),
       entity: nearest.entity,
       data: nearest.data,
     });
@@ -1861,8 +1876,9 @@ function scheduleArrivingFromEta(topic, baseCommand, etaSeconds) {
   const approachKey = `${stopCode}|${journeyKey}`;
   clearArrivingTimer(approachKey);
 
-  // Fire when this journey's forecast ETA reaches the arriving threshold.
-  const delayMs = Math.max(0, (etaSeconds - ARRIVING_ETA_SEC) * 1000);
+  // Fire when command ETA (true ETA − offset) reaches the arriving threshold.
+  const cmdEta = commandEtaSeconds(etaSeconds);
+  const delayMs = Math.max(0, (cmdEta - ARRIVING_ETA_SEC) * 1000);
   const timer = setTimeout(() => {
     arrivingTimers.delete(approachKey);
 
@@ -1886,6 +1902,7 @@ function scheduleArrivingFromEta(topic, baseCommand, etaSeconds) {
       return;
     }
 
+    // Countdown to ARRIVED is command-relative (ARRIVING_ETA_SEC until commandEta=0).
     emitDerivedCommand({
       type: "transit-command",
       protocol: "RET",
@@ -1913,6 +1930,7 @@ function scheduleArrivedFromEta(arrivingCommand) {
   clearArrivedCountdown(approachKey);
 
   const etaSeconds = Number(arrivingCommand.etaSeconds);
+  // etaSeconds here is already command-relative (true ETA − offset, or ARRIVING_ETA_SEC).
   const delayMs = Math.max(
     0,
     (Number.isFinite(etaSeconds) ? etaSeconds : ARRIVING_ETA_SEC) * 1000,
@@ -2351,6 +2369,11 @@ async function startZmqBridge() {
     );
   } else {
     console.log(`[ZMQ] Line filter off (all LinePlanningNumbers at stop filter)`);
+  }
+  if (COMMAND_ETA_OFFSET_SEC !== 0) {
+    console.log(
+      `[RET] Command ETA offset: ${COMMAND_ETA_OFFSET_SEC}s early (ARRIVING at true ETA≤${ARRIVING_ETA_SEC + COMMAND_ETA_OFFSET_SEC}s)`,
+    );
   }
 
   for await (const msg of subscriber) {

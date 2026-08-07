@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transit Display v3</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="display">
+      <video
+        id="videoA"
+        class="state-video active"
+        muted
+        playsinline
+        preload="auto"
+      ></video>
+      <video
+        id="videoB"
+        class="state-video"
+        muted
+        playsinline
+        preload="auto"
+      ></video>
+      <div
+        id="connectionDot"
+        class="connection-dot connected"
+        aria-hidden="true"
+      ></div>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>
