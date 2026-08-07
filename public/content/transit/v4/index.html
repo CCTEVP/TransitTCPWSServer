@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Transit Display v3</title>
+    <title>Transit Display v4</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -23,8 +23,15 @@
         preload="auto"
       ></video>
       <div
+        id="countdown"
+        class="countdown"
+        hidden
+        aria-hidden="true"
+        aria-live="polite"
+      ></div>
+      <div
         id="connectionDot"
-        class="connection-dot connected"
+        class="connection-dot disconnected"
         aria-hidden="true"
       ></div>
     </div>

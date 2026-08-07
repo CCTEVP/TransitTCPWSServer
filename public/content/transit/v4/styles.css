@@ -38,24 +38,66 @@ html, body {
   z-index: 1;
 }
 
+.countdown {
+  position: absolute;
+  left: 50%;
+  top: 12%;
+  transform: translateX(-50%);
+  z-index: 5;
+  min-width: 1.2em;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(4rem, 18vmin, 9rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: #fff;
+  text-align: center;
+  text-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.65),
+    0 0 24px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  user-select: none;
+}
+
+.countdown[hidden] {
+  display: none !important;
+}
+
 .connection-dot {
   position: absolute;
   bottom: 16px;
   right: 16px;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   z-index: 10;
-  opacity: 0;
-  transition: opacity 0.2s ease-in-out;
-}
-
-.connection-dot.connected {
-  opacity: 0;
-}
-
-.connection-dot.disconnected {
   opacity: 1;
+  transition: background 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+/* Connected: state color */
+.connection-dot.connected.status-arriving {
+  background: #2563eb;
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.85);
+}
+
+.connection-dot.connected.status-arrived {
+  background: #16a34a;
+  box-shadow: 0 0 8px rgba(22, 163, 74, 0.85);
+}
+
+.connection-dot.connected.status-departing {
+  background: #eab308;
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.85);
+}
+
+.connection-dot.connected.status-no-train {
+  background: #9ca3af;
+  box-shadow: 0 0 8px rgba(156, 163, 175, 0.75);
+}
+
+/* Disconnected overrides state color */
+.connection-dot.disconnected {
   background: #dc2626;
   box-shadow: 0 0 8px rgba(220, 38, 38, 0.8);
 }

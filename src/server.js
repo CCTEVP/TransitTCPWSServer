@@ -44,7 +44,7 @@ const ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS = Number(
   process.env.ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS || 60000,
 );
 // Emit RET_TRAIN_ARRIVING_15S only when forecast ETA is at/below this (seconds).
-const ARRIVING_ETA_SEC = Number(process.env.ARRIVING_ETA_SEC || 15);
+const ARRIVING_ETA_SEC = Number(process.env.ARRIVING_ETA_SEC || 30);
 // Subtract from true GOVI ETA for ARRIVING/ARRIVED command timing only (dashboard keeps true ETA).
 const COMMAND_ETA_OFFSET_SEC = Number(process.env.COMMAND_ETA_OFFSET_SEC || 0);
 const UPCOMING_STALE_MS = Number(process.env.UPCOMING_STALE_MS || 120000);
@@ -129,9 +129,9 @@ app.get(["/status", "/dashboard/status"], (req, res) => {
   res.redirect(301, "/");
 });
 app.get(["/content", "/content/"], (req, res) => {
-  res.sendFile(path.join(contentDir, "transit", "v3", "index.html"));
+  res.sendFile(path.join(contentDir, "transit", "v4", "index.html"));
 });
-app.use("/content", express.static(path.join(contentDir, "transit", "v3")));
+app.use("/content", express.static(path.join(contentDir, "transit", "v4")));
 app.use("/content", express.static(contentDir));
 app.use(express.static(publicDir));
 

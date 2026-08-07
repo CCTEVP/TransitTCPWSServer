@@ -545,23 +545,23 @@
       }
 
       .upcoming-table .badge-status.driving {
-        color: #3d5a66;
-        background: #d9e7ed;
+        color: #4b5563;
+        background: #e5e7eb;
       }
 
       .upcoming-table .badge-status.arriving {
-        color: #7a4d00;
-        background: #ffe0a3;
+        color: #1e40af;
+        background: #dbeafe;
       }
 
       .upcoming-table .badge-status.arrived {
-        color: #0d5c38;
-        background: #c6efd9;
+        color: #166534;
+        background: #dcfce7;
       }
 
       .upcoming-table .badge-status.departing {
-        color: #8a2e18;
-        background: #f7d0c6;
+        color: #a16207;
+        background: #fef08a;
       }
 
       .emptyMsg {
@@ -1182,6 +1182,7 @@
             "Command ETA offset",
             `${config?.commandEtaOffsetSec ?? 0}s early`,
           ],
+          ["Arriving threshold", `${config?.arrivingEtaSec ?? "-"}s`],
           ["No-train initial", `${config?.noTrainInitialDelayMs || "-"} ms`],
           [
             "No-train after depart",
