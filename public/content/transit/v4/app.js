@@ -1,5 +1,5 @@
-const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/content`;
-//const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://transitproject-763503917257.europe-west1.run.app/content`;
+//const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/content`;
+const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://transitproject-763503917257.europe-west1.run.app/content`;
 const RECONNECT_DELAY_MS = 3000;
 // Must be > server WS_PING_INTERVAL_MS (default 25s). JSON heartbeats reset this.
 const HEARTBEAT_TIMEOUT_MS = 70000;
