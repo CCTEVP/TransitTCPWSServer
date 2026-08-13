@@ -1,5 +1,5 @@
-//const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/content`;
-const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://transitproject-763503917257.europe-west1.run.app/content`;
+const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/content`;
+//const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://transitproject-763503917257.europe-west1.run.app/content`;
 const RECONNECT_DELAY_MS = 3000;
 // Must be > server WS_PING_INTERVAL_MS (default 25s). JSON heartbeats reset this.
 const HEARTBEAT_TIMEOUT_MS = 70000;
@@ -11,7 +11,7 @@ const COUNTDOWN_FROM_SEC = 10;
 
 // Video 1 idle / Video 2 arriving (swappable) / Video 3 arrived
 const VIDEO_IDLE = "./videos/video01.mp4";
-const ARRIVING_VIDEO_SRC = "./videos/video02.mp4";
+const ARRIVING_VIDEO_SRC = "./videos/video03.mp4";
 const VIDEO_ARRIVED = "./videos/video03.mp4";
 const VIDEO_DEPARTED = "./videos/video01.mp4";
 
