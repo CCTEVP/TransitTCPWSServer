@@ -323,7 +323,7 @@
     const playerQuery = getPlayerQuery();
     if (!playerQuery && !iataParam && !gatesParam) {
       renderError(
-        "Missing player id or iata/gates. Add ?player=…, ?com.broadsign.suite.bsp.resource_id=…, ?iata=…, or ?gates=… to the URL.",
+        "No airport or gate/belt provided. Add ?iata=… and/or ?gates=… (or a player id) to the URL.",
       );
       return;
     }

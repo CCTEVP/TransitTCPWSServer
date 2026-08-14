@@ -364,9 +364,9 @@
 
   async function loadFlights() {
     const playerQuery = getPlayerQuery();
-    if (!playerQuery && !iataParam) {
+    if (!playerQuery && !iataParam && !gatesParam) {
       const message =
-        "Missing player id or iata. Add ?player=…, ?com.broadsign.suite.bsp.resource_id=…, or ?iata=… to the URL.";
+        "No airport or gate/belt provided. Add ?iata=… and/or ?gates=… (or a player id) to the URL.";
       arrivalsListEl.innerHTML = `<p class="error">${message}</p>`;
       departuresListEl.innerHTML = `<p class="error">${message}</p>`;
       return;
