@@ -35,7 +35,9 @@
   const arrivalsFooterEl = document.getElementById("arrivalsFooter");
   const departuresFooterEl = document.getElementById("departuresFooter");
   const iataLeftEl = document.getElementById("iataLeft");
-  const clockEl = document.getElementById("clock");
+  const iataRightEl = document.getElementById("iataRight");
+  const clockLeftEl = document.getElementById("clockLeft");
+  const clockRightEl = document.getElementById("clockRight");
 
   function fitBoardToViewport() {
     if (!boardEl || !boardFrameEl) return;
@@ -99,12 +101,14 @@
 
   function tickClock() {
     const now = new Date();
-    clockEl.textContent = now.toLocaleTimeString("en-GB", {
+    const time = now.toLocaleTimeString("en-GB", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
       hour12: false,
     });
+    clockLeftEl.textContent = time;
+    clockRightEl.textContent = time;
   }
 
   function escapeHtml(value) {
@@ -333,7 +337,9 @@
       ? `Departures · ${departureGates.join(" · ")}`
       : "Departures";
 
-    iataLeftEl.textContent = meta.iata || iataParam || meta.gate || "Avinor";
+    const iata = meta.iata || iataParam || meta.gate || "—";
+    iataLeftEl.textContent = iata;
+    iataRightEl.textContent = iata;
   }
 
   function fetchJsonp(url) {

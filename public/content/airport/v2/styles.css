@@ -201,10 +201,10 @@ body {
 
 .panel-footer {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
-  min-height: 56px;
+  height: 56px;
   padding: 0 22px;
   background: var(--footer-blue);
   color: #fff;
@@ -213,11 +213,13 @@ body {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  overflow: hidden;
 }
 
 .footer-mark {
   display: grid;
   place-items: center;
+  flex-shrink: 0;
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -228,9 +230,27 @@ body {
   font-style: italic;
 }
 
+.footer-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .footer-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
   justify-self: end;
+  flex-shrink: 0;
   letter-spacing: 0.1em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.footer-clock {
+  min-width: 7.5ch;
+  text-align: right;
 }
 
 .empty,
