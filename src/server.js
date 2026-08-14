@@ -115,6 +115,7 @@ let feedPhase = "bootstrap"; // bootstrap | rig | govi | arriving
 let feedSwitchingActive = false;
 const arrivingTimers = new Map();
 const arrivedCountdownTimers = new Map();
+const arrivedCountdownDueAtMs = new Map();
 // stopCode -> Map(journeyKey -> upcoming forecast entry)
 const upcomingByStop = new Map();
 
@@ -1812,8 +1813,9 @@ function reconcileUpcomingArrivals(stopCode) {
     }
   }
 
-  // Already committed to a train at/near the stop — keep ranking for UI only.
+  // Already committed near the stop — keep ranking for UI; refresh ARRIVED from live ETA.
   if (stopIsLockedToTrain(stopCode)) {
+    refreshArrivedCountdownFromLiveEta(stopCode);
     return hunting;
   }
 
@@ -1864,6 +1866,39 @@ function clearArrivedCountdown(approachKey) {
     clearTimeout(timer);
     arrivedCountdownTimers.delete(approachKey);
   }
+  arrivedCountdownDueAtMs.delete(approachKey);
+}
+
+/** While ARRIVING, slip/accelerate ARRIVED from live GOVI ETA (feeds stay subscribed). */
+function refreshArrivedCountdownFromLiveEta(stopCode) {
+  const current = stopStates.get(stopCode);
+  if (
+    current?.command !== "RET_TRAIN_ARRIVING_15S" ||
+    !current.journeyKey
+  ) {
+    return;
+  }
+
+  const entry = upcomingByStop.get(stopCode)?.get(current.journeyKey);
+  if (!entry) {
+    return;
+  }
+
+  const trueEta = liveEtaSeconds(entry);
+  if (!Number.isFinite(trueEta)) {
+    return;
+  }
+
+  scheduleArrivedFromEta({
+    topic: entry.topic,
+    entity: {
+      ...(entry.entity || {}),
+      userstopcode:
+        entry.entity?.userstopcode || entry.stopCode || stopCode,
+    },
+    data: entry.data || {},
+    etaSeconds: Math.max(0, commandEtaSeconds(trueEta)),
+  });
 }
 
 function scheduleArrivingFromEta(topic, baseCommand, etaSeconds) {
@@ -1927,17 +1962,28 @@ function scheduleArrivedFromEta(arrivingCommand) {
   }
 
   const approachKey = `${stopCode}|${journeyKey}`;
-  clearArrivedCountdown(approachKey);
-
   const etaSeconds = Number(arrivingCommand.etaSeconds);
   // etaSeconds here is already command-relative (true ETA − offset, or ARRIVING_ETA_SEC).
   const delayMs = Math.max(
     0,
     (Number.isFinite(etaSeconds) ? etaSeconds : ARRIVING_ETA_SEC) * 1000,
   );
+  const dueAtMs = Date.now() + delayMs;
+  const prevDueAtMs = arrivedCountdownDueAtMs.get(approachKey);
+  // Ignore sub-second ETA jitter so GOVI ticks do not thrash the timer/log.
+  if (
+    prevDueAtMs != null &&
+    arrivedCountdownTimers.has(approachKey) &&
+    Math.abs(prevDueAtMs - dueAtMs) < 1000
+  ) {
+    return;
+  }
+
+  clearArrivedCountdown(approachKey);
 
   const timer = setTimeout(() => {
     arrivedCountdownTimers.delete(approachKey);
+    arrivedCountdownDueAtMs.delete(approachKey);
     const current = stopStates.get(stopCode);
     if (
       current?.journeyKey === journeyKey &&
@@ -1961,6 +2007,7 @@ function scheduleArrivedFromEta(arrivingCommand) {
   }, delayMs);
 
   arrivedCountdownTimers.set(approachKey, timer);
+  arrivedCountdownDueAtMs.set(approachKey, dueAtMs);
   console.log(
     `[RET] ARRIVING → countdown ${Math.round(delayMs / 1000)}s to ARRIVED (${journeyKey || stopCode})`,
   );
@@ -2289,8 +2336,10 @@ function setFeedPhase(phase, reason = "manual") {
     unsubscribeBisonTopics(reason);
     subscribeTurboTopics(reason);
   } else if (phase === "arriving") {
-    unsubscribeBisonTopics(reason);
-    unsubscribeTurboTopics(reason);
+    // Stay live for the arriving window: RIG can fire early ARRIVED / miss,
+    // GOVI can slip or cancel via updated ETA (do not dual-unsubscribe).
+    subscribeBisonTopics(reason);
+    subscribeTurboTopics(reason);
   }
 
   return feedPhase;
