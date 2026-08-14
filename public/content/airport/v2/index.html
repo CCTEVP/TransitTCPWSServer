@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arrivals &amp; Departures</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Source+Sans+3:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="stage">
+      <div class="board-frame" id="boardFrame">
+        <main class="board" id="board">
+          <section class="panel panel--arrivals" aria-label="Arrivals">
+            <header class="panel-header">
+              <span class="plane-icon plane-icon--arrivals" aria-hidden="true"></span>
+              <h1>Arrivals</h1>
+              <span class="plane-icon plane-icon--arrivals" aria-hidden="true"></span>
+            </header>
+            <div class="col-head" aria-hidden="true">
+              <span class="col col-status"></span>
+              <span class="col col-flight">Flight</span>
+              <span class="col col-city">From</span>
+              <span class="col col-via">Via</span>
+              <span class="col col-time">Sched</span>
+              <span class="col col-eta">Expect</span>
+              <span class="col col-gate">Gate</span>
+              <span class="col col-belt">Belt</span>
+              <span class="col col-remark">Status</span>
+            </div>
+            <div class="flight-list" id="arrivalsList">
+              <p class="empty">Loading…</p>
+            </div>
+            <footer class="panel-footer">
+              <span class="footer-mark" aria-hidden="true">i</span>
+              <span id="arrivalsFooter">Arrivals</span>
+              <span class="footer-meta" id="iataLeft">—</span>
+            </footer>
+          </section>
+
+          <section class="panel panel--departures" aria-label="Departures">
+            <header class="panel-header">
+              <span class="plane-icon plane-icon--departures" aria-hidden="true"></span>
+              <h1>Departure</h1>
+              <span class="plane-icon plane-icon--departures" aria-hidden="true"></span>
+            </header>
+            <div class="col-head" aria-hidden="true">
+              <span class="col col-status"></span>
+              <span class="col col-flight">Flight</span>
+              <span class="col col-city">To</span>
+              <span class="col col-via">Via</span>
+              <span class="col col-time">Sched</span>
+              <span class="col col-eta">Expect</span>
+              <span class="col col-gate">Gate</span>
+              <span class="col col-belt">Belt</span>
+              <span class="col col-remark">Status</span>
+            </div>
+            <div class="flight-list" id="departuresList">
+              <p class="empty">Loading…</p>
+            </div>
+            <footer class="panel-footer">
+              <span class="footer-mark" aria-hidden="true">i</span>
+              <span id="departuresFooter">Departures</span>
+              <span class="footer-meta" id="clock">—</span>
+            </footer>
+          </section>
+        </main>
+      </div>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>

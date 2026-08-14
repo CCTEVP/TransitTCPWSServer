@@ -17,9 +17,19 @@
     15,
     Number(params.get("refresh") || 180) || 180,
   );
+  const iataParam = (params.get("iata") || "").trim().toUpperCase();
+  const gatesParam = (params.get("gates") || "")
+    .split(",")
+    .map((g) => g.trim().toUpperCase())
+    .filter(Boolean)
+    .join(",");
+  const gateFilter = new Set(
+    gatesParam ? gatesParam.split(",").filter(Boolean) : [],
+  );
 
   const boardEl = document.getElementById("board");
   const boardFrameEl = document.getElementById("boardFrame");
+  const gateLabelEl = document.getElementById("gateLabel");
   const gateEl = document.getElementById("gate");
   const iataEl = document.getElementById("iata");
   const contentEl = document.getElementById("content");
@@ -67,17 +77,39 @@
     return null;
   }
 
+  function buildFlightsUrl(extraParams = {}) {
+    const playerQuery = getPlayerQuery();
+    const url = new URL(`${apiBase}/flights/norway`);
+    if (playerQuery) {
+      url.searchParams.set(playerQuery.key, playerQuery.value);
+    }
+    if (iataParam) {
+      url.searchParams.set("iata", iataParam);
+    }
+    if (gatesParam) {
+      url.searchParams.set("gates", gatesParam);
+    }
+    for (const [key, value] of Object.entries(extraParams)) {
+      if (value != null && value !== "") {
+        url.searchParams.set(key, value);
+      }
+    }
+    return url;
+  }
+
   function setDirectionLabels(dir) {
     if (dir === "A") {
       document.title = "Next Arrival";
       eyebrowEl.textContent = "Arrivals";
       headlineEl.textContent = "Next arrival";
+      if (gateLabelEl) gateLabelEl.textContent = "Belt";
       return;
     }
 
     document.title = "Next Departure";
     eyebrowEl.textContent = "Departures";
     headlineEl.textContent = "Next departure";
+    if (gateLabelEl) gateLabelEl.textContent = "Gate";
   }
 
   function tickClock() {
@@ -102,7 +134,47 @@
     });
   }
 
-  function etaLabel(flight) {
+  function flightDirection(flight, fallback = "D") {
+    const raw =
+      flight?.arr_dep ||
+      flight?.arrDep ||
+      flight?.direction ||
+      flight?.Direction ||
+      fallback;
+    return String(raw).trim().toUpperCase() || fallback;
+  }
+
+  function gateValue(flight) {
+    return flight?.gate || "—";
+  }
+
+  function beltValue(flight) {
+    return flight?.beltNumber || flight?.belt || "—";
+  }
+
+  function displayPoint(flight, dir) {
+    if (dir === "A") {
+      const belt = beltValue(flight);
+      if (belt !== "—") return belt;
+      return gateValue(flight);
+    }
+    return gateValue(flight);
+  }
+
+  function passesGateFilter(flight, dir) {
+    if (gateFilter.size === 0) return true;
+    const gate = String(gateValue(flight) || "").toUpperCase();
+    const belt = String(beltValue(flight) || "").toUpperCase();
+    if (dir === "A") {
+      return (
+        (belt && belt !== "—" && gateFilter.has(belt)) ||
+        (gate && gate !== "—" && gateFilter.has(gate))
+      );
+    }
+    return gate && gate !== "—" && gateFilter.has(gate);
+  }
+
+  function etaLabel(flight, dir) {
     const code = flight.status && flight.status.code;
     const statusTime = flight.status && flight.status.time;
     if (!statusTime) return null;
@@ -110,7 +182,10 @@
       return { label: "Arrived", time: formatTime(statusTime) };
     }
     if (code === "E" || flight.delayed === "Y") {
-      return { label: "ETA", time: formatTime(statusTime) };
+      return {
+        label: dir === "D" ? "ETD" : "ETA",
+        time: formatTime(statusTime),
+      };
     }
     return { label: "Updated", time: formatTime(statusTime) };
   }
@@ -129,10 +204,36 @@
     return STATUS_LABELS[code] || code || "Scheduled";
   }
 
-  function pickNextFlight(flights) {
+  function collectFlights(payload, preferredDirection) {
+    if (!payload || typeof payload !== "object") return [];
+
+    if (preferredDirection === "A" && Array.isArray(payload.arrivals)) {
+      return payload.arrivals;
+    }
+    if (preferredDirection === "D" && Array.isArray(payload.departures)) {
+      return payload.departures;
+    }
+
+    const flights = Array.isArray(payload.flights) ? payload.flights : [];
+    const filtered = flights.filter(
+      (flight) => flightDirection(flight, preferredDirection) === preferredDirection,
+    );
+    if (filtered.length) return filtered;
+
+    // Single-direction payload with no arr_dep markers.
+    if (flights.length) {
+      const payloadDir = String(payload.direction || "").toUpperCase();
+      if (!payloadDir || payloadDir === preferredDirection) return flights;
+    }
+
+    return [];
+  }
+
+  function pickNextFlight(flights, dir) {
     const now = Date.now();
     const sorted = (flights || [])
       .filter((flight) => flight.scheduleTime)
+      .filter((flight) => passesGateFilter(flight, dir))
       .slice()
       .sort(
         (a, b) =>
@@ -144,7 +245,7 @@
       (flight) =>
         new Date(flight.scheduleTime).getTime() >= now - 15 * 60 * 1000,
     );
-    return upcoming || sorted[sorted.length - 1] || null;
+    return upcoming || sorted[0] || null;
   }
 
   function renderError(message) {
@@ -160,33 +261,34 @@
 
     setDirectionLabels(resolvedDirection);
 
-    gateEl.textContent = payload.gate || "—";
-    iataEl.textContent = payload.iata || payload.airportCode || "—";
+    iataEl.textContent =
+      payload.iata || payload.airportCode || iataParam || "—";
 
     if (payload.error) {
       renderError(payload.message || payload.error);
       return;
     }
 
-    const next = pickNextFlight(payload.flights);
+    const flights = collectFlights(payload, resolvedDirection);
+    const next = pickNextFlight(flights, resolvedDirection);
     if (!next) {
+      gateEl.textContent = gatesParam || payload.gate || "—";
       contentEl.innerHTML = `<p class="empty">No upcoming ${
         resolvedDirection === "D" ? "departures" : "arrivals"
-      } for this gate.</p>`;
+      } for this ${resolvedDirection === "D" ? "gate" : "belt"}.</p>`;
       return;
     }
 
+    const point = displayPoint(next, resolvedDirection);
+    gateEl.textContent = point;
+
     const status = statusLabel(next);
     const klass = statusClass(next.status && next.status.code, next.delayed);
-    const eta = etaLabel(next);
+    const eta = etaLabel(next, resolvedDirection);
     const placeLabel = resolvedDirection === "D" ? "To" : "From";
     const city = next.airportName || next.airport || "—";
     const cityCode = next.airportName && next.airport ? next.airport : "";
     const secondaryLabel = resolvedDirection === "D" ? "Gate" : "Belt";
-    const secondaryValue =
-      resolvedDirection === "D"
-        ? next.gate || payload.gate || "—"
-        : next.beltNumber || "—";
 
     contentEl.innerHTML = `
       <div class="flight-id">${next.flightId || "—"}</div>
@@ -210,7 +312,7 @@
         </div>
         <div class="detail">
           <dt>${secondaryLabel}</dt>
-          <dd>${secondaryValue}</dd>
+          <dd>${point}</dd>
         </div>
       </dl>
       <div class="status ${klass}">${status}</div>
@@ -219,17 +321,15 @@
 
   function loadFlights() {
     const playerQuery = getPlayerQuery();
-    if (!playerQuery) {
+    if (!playerQuery && !iataParam && !gatesParam) {
       renderError(
-        "Missing player id. Add ?player=… or ?com.broadsign.suite.bsp.resource_id=… to the URL.",
+        "Missing player id or iata/gates. Add ?player=…, ?com.broadsign.suite.bsp.resource_id=…, ?iata=…, or ?gates=… to the URL.",
       );
       return;
     }
 
     // Default JS response from Zuplo (data = {...};) — works without CORS preflight.
-    const requestUrl = new URL(`${apiBase}/flights/norway`);
-    requestUrl.searchParams.set(playerQuery.key, playerQuery.value);
-    requestUrl.searchParams.set("direction", direction);
+    const requestUrl = buildFlightsUrl({ direction });
 
     const previous = window.data;
     window.data = undefined;
