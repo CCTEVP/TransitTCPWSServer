@@ -30,7 +30,19 @@ const {
   extractExpectedArrivalMs,
   containsNoTrainSignal,
   isAllowedRetCommand,
+  compareUpcoming,
 } = require("../src/server.js");
+
+test("compareUpcoming orders by ETA, then vehicle number, with a stable tie", () => {
+  const entries = [
+    { vehiclenumber: "300", etaSeconds: 120 },
+    { vehiclenumber: "200", etaSeconds: 60 },
+    { vehiclenumber: "100", etaSeconds: 120 },
+    { vehiclenumber: "150", etaSeconds: 120 },
+  ];
+  const sorted = [...entries].sort(compareUpcoming).map((e) => e.vehiclenumber);
+  assert.deepEqual(sorted, ["200", "100", "150", "300"]);
+});
 
 test("secondsSince returns null for empty input and elapsed seconds otherwise", () => {
   assert.equal(secondsSince(null), null);

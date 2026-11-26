@@ -107,7 +107,6 @@ const ALLOWED_RET_COMMANDS = new Set([
   "RET_TRAIN_ARRIVED",
   "RET_TRAIN_DEPARTED",
 ]);
-let initialNoTrainSent = false;
 let departureNoTrainTimer = null;
 let bisonSubscribed = false;
 let turboSubscribed = false;
@@ -340,17 +339,16 @@ function shouldSkipDuplicateBroadcast(channel, obj) {
   return false;
 }
 
-function sendWsMessage(client, message) {
+function sendWsMessage(client, message, bytes, sentAt) {
   if (client.readyState !== WebSocket.OPEN) {
     return false;
   }
 
   client.send(message);
 
-  const bytes = Buffer.byteLength(message, "utf8");
   const meta = wsClientMeta.get(client);
   if (meta) {
-    meta.lastSentAt = new Date().toISOString();
+    meta.lastSentAt = sentAt;
     meta.sentCount = (meta.sentCount || 0) + 1;
     meta.sentBytes = (meta.sentBytes || 0) + bytes;
 
@@ -365,6 +363,9 @@ function sendWsMessage(client, message) {
 }
 
 function broadcastChannelMessage(channel, message) {
+  // Encode size and timestamp once per broadcast, not once per client.
+  const bytes = Buffer.byteLength(message, "utf8");
+  const sentAt = new Date().toISOString();
   let sent = 0;
 
   for (const client of wss.clients) {
@@ -373,7 +374,7 @@ function broadcastChannelMessage(channel, message) {
       continue;
     }
 
-    if (sendWsMessage(client, message)) {
+    if (sendWsMessage(client, message, bytes, sentAt)) {
       sent += 1;
     }
   }
@@ -1568,7 +1569,24 @@ function shouldDropUpcomingEntry(entry, etaSeconds, nowMs = Date.now()) {
   return false;
 }
 
-function getSortedUpcoming(stopCode, { includeOverdue = true } = {}) {
+function compareUpcoming(a, b) {
+  const lifeA = lifecycleSortRank(a);
+  const lifeB = lifecycleSortRank(b);
+  if (lifeA !== lifeB) {
+    return lifeA - lifeB;
+  }
+  if (a.etaSeconds !== b.etaSeconds) {
+    return a.etaSeconds - b.etaSeconds;
+  }
+  return String(a.vehiclenumber || "").localeCompare(
+    String(b.vehiclenumber || ""),
+  );
+}
+
+function getSortedUpcoming(
+  stopCode,
+  { includeOverdue = true, sorted = true } = {},
+) {
   const byJourney = upcomingByStop.get(stopCode);
   if (!byJourney) {
     return [];
@@ -1608,19 +1626,9 @@ function getSortedUpcoming(stopCode, { includeOverdue = true } = {}) {
     });
   }
 
-  list.sort((a, b) => {
-    const lifeA = lifecycleSortRank(a);
-    const lifeB = lifecycleSortRank(b);
-    if (lifeA !== lifeB) {
-      return lifeA - lifeB;
-    }
-    if (a.etaSeconds !== b.etaSeconds) {
-      return a.etaSeconds - b.etaSeconds;
-    }
-    return String(a.vehiclenumber || "").localeCompare(
-      String(b.vehiclenumber || ""),
-    );
-  });
+  if (sorted) {
+    list.sort(compareUpcoming);
+  }
 
   return list;
 }
@@ -1636,23 +1644,14 @@ function getUpcomingVehiclesSnapshot() {
 
   const merged = [];
   for (const stopCode of stops) {
-    merged.push(...getSortedUpcoming(stopCode, { includeOverdue: true }));
+    // Unsorted per stop: the global sort below uses the same comparator.
+    merged.push(
+      ...getSortedUpcoming(stopCode, { includeOverdue: true, sorted: false }),
+    );
   }
 
   // Global order across all stops (same ranking as per-stop list).
-  merged.sort((a, b) => {
-    const lifeA = lifecycleSortRank(a);
-    const lifeB = lifecycleSortRank(b);
-    if (lifeA !== lifeB) {
-      return lifeA - lifeB;
-    }
-    if (a.etaSeconds !== b.etaSeconds) {
-      return a.etaSeconds - b.etaSeconds;
-    }
-    return String(a.vehiclenumber || "").localeCompare(
-      String(b.vehiclenumber || ""),
-    );
-  });
+  merged.sort(compareUpcoming);
 
   const limited = merged.slice(0, UPCOMING_DISPLAY_LIMIT);
   const nearestIndex = limited.findIndex(
@@ -2027,8 +2026,6 @@ function scheduleArrivedFromEta(arrivingCommand) {
 }
 
 function emitDerivedCommand(commandMessage) {
-  initialNoTrainSent = true;
-
   const { broadcast, scheduleDepartureTimer, clearDepartureTimer } =
     processStopCommand(commandMessage);
 
@@ -2627,7 +2624,6 @@ function sendInitialNoTrain() {
   }
 
   if (USERSTOPCODES.some((stopCode) => isTrainAtStation(stopCode))) {
-    initialNoTrainSent = true;
     return;
   }
 
@@ -2717,4 +2713,5 @@ module.exports = {
   extractExpectedArrivalMs,
   containsNoTrainSignal,
   isAllowedRetCommand,
+  compareUpcoming,
 };
