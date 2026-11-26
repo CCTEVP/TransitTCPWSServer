@@ -2,11 +2,13 @@
  * Replay one capture into two server images side by side and compare what the
  * display would receive. Needs Docker; nothing connects to the live feed.
  *
- *   node scripts/run-replay.js <capture.jsonl> <imageA> <imageB>
+ *   node scripts/run-replay.js <capture.jsonl> <imageA> <imageB> [A:KEY=VALUE ...] [B:KEY=VALUE ...]
  *   e.g. node scripts/run-replay.js captures/feed-15min.jsonl transit-tcp-ws-server:main transit-tcp-ws-server:replay
  *
- * imageB must contain scripts/replay-feed.js (it also runs the publisher).
+ * The publisher runs in imageB with scripts/replay-feed.js mounted, so any image works.
  * Server settings come from .env (parsed with dotenv, so quoted values work).
+ * A:/B: arguments override one setting for that side only, e.g. compare a config
+ * change on the same image: ... img img B:ZMQ_TURBO_ON_DEMAND=false
  * Outputs captures/<capture>.<A|B>.jsonl and .log next to the capture.
  */
 const fs = require("fs");
@@ -14,7 +16,16 @@ const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const dotenv = require("dotenv");
 
-const [captureArg, imageA, imageB] = process.argv.slice(2);
+const [captureArg, imageA, imageB, ...overrideArgs] = process.argv.slice(2);
+const overrides = { A: {}, B: {} };
+for (const arg of overrideArgs) {
+  const match = /^(A|B):([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(arg);
+  if (!match) {
+    console.error(`bad override "${arg}" (expected A:KEY=VALUE or B:KEY=VALUE)`);
+    process.exit(1);
+  }
+  overrides[match[1]][match[2]] = match[3];
+}
 if (!captureArg || !imageA || !imageB) {
   console.error("usage: run-replay.js <capture.jsonl> <imageA> <imageB>");
   process.exit(1);
@@ -65,7 +76,8 @@ async function main() {
   console.log(`[run] ${frames.length} frames over ${spanSeconds}s; replay starts in 30s`);
 
   for (const server of servers) {
-    const envArgs = Object.entries({ ...env, CLOCK_OFFSET_MS: String(offset) }).flatMap(
+    const serverEnv = { ...env, ...overrides[server.label], CLOCK_OFFSET_MS: String(offset) };
+    const envArgs = Object.entries(serverEnv).flatMap(
       ([key, value]) => ["-e", `${key}=${value}`],
     );
     docker([
@@ -81,8 +93,11 @@ async function main() {
   docker([
     "run", "-d", "--name", "transit-replay-feed", "--network", NETWORK,
     "-v", `${captureDir}:/captures:ro`,
+    // Mount the publisher so any image with zeromq installed can run it.
+    "-v", `${path.join(root, "scripts", "replay-feed.js")}:/replay/replay-feed.js:ro`,
+    "-e", "NODE_PATH=/app/node_modules",
     "--entrypoint", "node", imageB,
-    "scripts/replay-feed.js", `/captures/${captureName}`, String(startAt), "7658", "7817", String(TAIL_SECONDS),
+    "/replay/replay-feed.js", `/captures/${captureName}`, String(startAt), "7658", "7817", String(TAIL_SECONDS),
   ]);
 
   const recordSeconds = Math.ceil((startAt - Date.now()) / 1000) + spanSeconds + TAIL_SECONDS;

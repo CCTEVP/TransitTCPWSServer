@@ -10,7 +10,9 @@ substitutions:
   _ZMQ_TURBO_ENABLED: "true"
   _ZMQ_TURBO_ENDPOINT: tcp://pubsub.besteffort.ndovloket.nl:7817
   _ZMQ_TURBO_TOPICS: /GOVI/KV8passtimes/RET
-  _ZMQ_TURBO_ON_DEMAND: "true"
+  # Keep RIG and GOVI subscribed at all times. On-demand switching dropped a tram
+  # in a replay (RIG unsubscribed during its ARRIVAL); both feeds are low volume.
+  _ZMQ_TURBO_ON_DEMAND: "false"
   _ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS: "60000"
   # Beurs tram Coolsingel + Blaak/Westblaak
   _USERSTOPCODES: HA1161,HA1162,HA1141,HA1142
