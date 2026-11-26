@@ -99,6 +99,47 @@ are broadcast (`protocol: "RET"`):
 - GOVI fair-use indicates a limit of one connection per datastream per consumer.
 - If `payloadText` is not useful for your message type, decode `payloadBase64` in your client.
 
+## Development checks
+
+```bash
+npm test        # unit tests (server helpers + display playback), no network
+npm run lint    # ESLint: undefined variables, unused values
+```
+
+Tests stub the `zeromq` module, so they run on any OS. Running the service itself
+on Windows needs Docker: the prebuilt `zeromq` binary crashes there when a socket
+is created.
+
+```bash
+docker build -t transit-tcp-ws-server:local .
+docker run --rm -p 8080:8080 --env-file .env transit-tcp-ws-server:local
+```
+
+Note: `docker --env-file` keeps quotes, so `LINEPLANNINGNUMBERS="1###"` in `.env`
+reaches the server with the quotes included. Use `LINEPLANNINGNUMBERS=1###` there,
+or use `scripts/run-replay.js`, which parses `.env` with dotenv.
+
+## Capture and replay (regression check)
+
+Record a slice of the live feed once, then replay it into two server builds and
+compare what the display receives. Replays never touch the live feed.
+
+```bash
+# 1. Capture (inside the image, so zeromq works). Keeps only frames for the tracked stops.
+docker run --rm --env-file .env -v "$PWD/captures:/captures" --entrypoint node \
+  transit-tcp-ws-server:local scripts/capture-feed.js 900 /captures/feed.jsonl
+
+# 2. Build the two versions to compare (here: main vs the working tree).
+git archive main | docker build -t transit-tcp-ws-server:main -
+docker build -t transit-tcp-ws-server:local .
+
+# 3. Replay into both at 1x speed and compare (exit code 1 on any difference).
+node scripts/run-replay.js captures/feed.jsonl transit-tcp-ws-server:main transit-tcp-ws-server:local
+```
+
+`scripts/clock-shift.js` shifts each server's clock so the recorded timestamps look
+current. `captures/` is gitignored.
+
 ## Google Cloud Run Auto-Deploy (main branch)
 
 This repository now includes:
