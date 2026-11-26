@@ -51,6 +51,8 @@ let statusCommand = "RET_NO_TRAIN";
 
 let countdownTimer = null;
 let countdownValue = null;
+// Bumped whenever a playback is cancelled, so late callbacks from it can be ignored.
+let playbackGeneration = 0;
 
 for (const video of videos) {
   video.muted = true;
@@ -158,13 +160,17 @@ function waitForFirstFrame(video) {
   });
 }
 
-function startVideoPlayback(video, command) {
+function startVideoPlayback(video, command, generation) {
   video.loop = true;
   video.onended = null;
+  const isCurrent = () => generation === playbackGeneration;
 
   return waitForFirstFrame(video)
-    .then(() => video.play())
     .then(() => {
+      if (isCurrent()) return video.play();
+    })
+    .then(() => {
+      if (!isCurrent()) return;
       swapActiveVideo(video);
       isPlaying = true;
       currentCommand = command;
@@ -176,6 +182,7 @@ function startVideoPlayback(video, command) {
 }
 
 function cancelPendingPlayback() {
+  playbackGeneration += 1;
   if (!pendingPlayback) {
     return;
   }
@@ -278,6 +285,7 @@ function playCommand(command) {
 
   cancelPendingPlayback();
   stopCountdown();
+  const generation = playbackGeneration;
 
   const nextVideo = inactiveVideo;
   nextVideo.pause();
@@ -290,8 +298,9 @@ function playCommand(command) {
 
   const isArriving = command === "RET_TRAIN_ARRIVING_15S";
 
-  startVideoPlayback(nextVideo, command)
+  startVideoPlayback(nextVideo, command, generation)
     .then(() => {
+      if (generation !== playbackGeneration) return;
       if (pendingPlayback?.video === nextVideo) {
         pendingPlayback = null;
       }
@@ -308,6 +317,7 @@ function playCommand(command) {
       }
     })
     .catch((error) => {
+      if (generation !== playbackGeneration) return;
       console.error("[Video] Autoplay failed:", error);
       if (pendingPlayback?.video === nextVideo) {
         pendingPlayback = null;
