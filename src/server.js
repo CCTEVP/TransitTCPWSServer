@@ -107,6 +107,7 @@ const ALLOWED_RET_COMMANDS = new Set([
   "RET_TRAIN_ARRIVED",
   "RET_TRAIN_DEPARTED",
 ]);
+let initialNoTrainSent = false;
 let departureNoTrainTimer = null;
 let bisonSubscribed = false;
 let turboSubscribed = false;
@@ -2026,6 +2027,8 @@ function scheduleArrivedFromEta(arrivingCommand) {
 }
 
 function emitDerivedCommand(commandMessage) {
+  initialNoTrainSent = true;
+
   const { broadcast, scheduleDepartureTimer, clearDepartureTimer } =
     processStopCommand(commandMessage);
 
@@ -2624,6 +2627,7 @@ function sendInitialNoTrain() {
   }
 
   if (USERSTOPCODES.some((stopCode) => isTrainAtStation(stopCode))) {
+    initialNoTrainSent = true;
     return;
   }
 
