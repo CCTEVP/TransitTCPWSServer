@@ -160,7 +160,9 @@ setTimeout(() => {
   clearInterval(statusTimer);
   try {
     ws.close();
-  } catch {}
+  } catch {
+    // already closed
+  }
   printSummary();
   process.exit(arrivedWithoutArriving > 0 ? 2 : 0);
 }, DURATION_MS);

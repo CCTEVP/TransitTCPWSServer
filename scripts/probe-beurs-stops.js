@@ -6,7 +6,6 @@ const zmq = require("zeromq");
 const zlib = require("zlib");
 
 const DURATION_MS = (Number(process.argv[2]) || 60) * 1000;
-const INTERESTING = /beurs|1162|8004|8138|timingpointcode.?31001/i;
 
 function decode(buf) {
   if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) {

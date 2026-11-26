@@ -50,7 +50,6 @@ let wsConnected = false;
 let statusCommand = "RET_NO_TRAIN";
 
 let countdownTimer = null;
-let countdownValue = null;
 // Bumped whenever a playback is cancelled, so late callbacks from it can be ignored.
 let playbackGeneration = 0;
 
@@ -89,7 +88,6 @@ function isKnownCommand(command) {
 
 function showCountdown(value) {
   if (!countdownEl) return;
-  countdownValue = value;
   countdownEl.textContent = String(value);
   countdownEl.hidden = false;
   countdownEl.setAttribute("aria-hidden", "false");
@@ -97,7 +95,6 @@ function showCountdown(value) {
 
 function hideCountdown() {
   if (!countdownEl) return;
-  countdownValue = null;
   countdownEl.hidden = true;
   countdownEl.textContent = "";
   countdownEl.setAttribute("aria-hidden", "true");

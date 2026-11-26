@@ -1731,7 +1731,7 @@ function updateUpcomingFromRetCommand(commandMessage) {
     return;
   }
 
-  let displayStatus = null;
+  let displayStatus;
   if (command === "RET_TRAIN_ARRIVING_15S") {
     displayStatus = "Arriving"; // Entering
   } else if (command === "RET_TRAIN_ARRIVED") {
@@ -2125,7 +2125,7 @@ function processBisonMessage(topic, decoded, receivedAt) {
 }
 
 function processTurboMessage(topic, decoded, receivedAt) {
-  let matchingRows = [];
+  let matchingRows;
   let parseError = null;
 
   try {

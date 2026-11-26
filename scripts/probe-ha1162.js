@@ -166,7 +166,6 @@ function etaKey(t) {
   const etas = [...byEta.keys()].filter((e) => e !== "?").sort();
   for (let i = 0; i < etas.length; i += 1) {
     const list = byEta.get(etas[i]);
-    const cluster = [{ eta: etas[i], list }];
     // also show neighbors within 30s if parseable as HH:MM:SS
     // (printed when same second OR we note adjacent)
     if (list.length < 2) continue;
