@@ -784,20 +784,31 @@ function parseDayParts(dayValue, fallbackIso) {
   };
 }
 
+// Intl.DateTimeFormat is expensive to construct; reuse one per timezone.
+const wallTimeFormatters = new Map();
+function getWallTimeFormatter(timeZone) {
+  let formatter = wallTimeFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+    wallTimeFormatters.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
 function zonedWallTimeToUtcDate(year, month, day, hour, minute, second, timeZone) {
   // Convert a wall-clock time in `timeZone` to a UTC Date without depending on
   // process TZ (Cloud Run is UTC; GOVI times are Europe/Amsterdam).
   const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
-  const dtf = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  });
+  const dtf = getWallTimeFormatter(timeZone);
 
   const parts = Object.fromEntries(
     dtf
