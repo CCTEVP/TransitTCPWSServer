@@ -24,20 +24,13 @@ function envBool(name, fallback = true) {
   return !["0", "false", "no", "off"].includes(String(value).toLowerCase());
 }
 
-const PORT = Number(process.env.PORT || 8080);
+const PORT = Number(process.env.PORT || 8282);
 const ZMQ_ENDPOINT =
   process.env.ZMQ_ENDPOINT || "tcp://pubsub.besteffort.ndovloket.nl:7658";
-const ZMQ_TOPICS = envList(
-  "ZMQ_TOPICS",
-  "/RIG/KV17cvlinfo,/RIG/KV6posinfo",
-);
+const ZMQ_TOPICS = envList("ZMQ_TOPICS", "/RIG/KV17cvlinfo,/RIG/KV6posinfo");
 const ZMQ_TURBO_ENDPOINT =
-  process.env.ZMQ_TURBO_ENDPOINT ||
-  "tcp://pubsub.besteffort.ndovloket.nl:7817";
-const ZMQ_TURBO_TOPICS = envList(
-  "ZMQ_TURBO_TOPICS",
-  "/GOVI/KV8passtimes/RET",
-);
+  process.env.ZMQ_TURBO_ENDPOINT || "tcp://pubsub.besteffort.ndovloket.nl:7817";
+const ZMQ_TURBO_TOPICS = envList("ZMQ_TURBO_TOPICS", "/GOVI/KV8passtimes/RET");
 const ZMQ_TURBO_ENABLED = envBool("ZMQ_TURBO_ENABLED", true);
 const ZMQ_TURBO_ON_DEMAND = envBool("ZMQ_TURBO_ON_DEMAND", true);
 const ZMQ_TURBO_IDLE_UNSUBSCRIBE_MS = Number(
@@ -57,13 +50,14 @@ const MAX_PAYLOAD_BYTES = Number(process.env.MAX_PAYLOAD_BYTES || 200000);
 const WS_CHANNEL_CONTROL = "control";
 const WS_CHANNEL_CONTENT = "content";
 const ROTTERDAM_TOPIC_PREFIX = process.env.ROTTERDAM_TOPIC_PREFIX || "/RIG/";
-const USERSTOPCODES = envList("USERSTOPCODES").map((code) => code.toLowerCase());
+const USERSTOPCODES = envList("USERSTOPCODES").map((code) =>
+  code.toLowerCase(),
+);
 // GOVI/Turbo stop filter. Empty env → reuse USERSTOPCODES. Set explicitly for quay split.
-const GOVI_USERSTOPCODES = (
+const GOVI_USERSTOPCODES =
   process.env.GOVI_USERSTOPCODES === undefined
     ? USERSTOPCODES
-    : envList("GOVI_USERSTOPCODES").map((code) => code.toLowerCase())
-);
+    : envList("GOVI_USERSTOPCODES").map((code) => code.toLowerCase());
 // Empty = all lines. Exact codes and wildcards (# = one digit, * = any run).
 // Example: 1### matches 1682/1702/… ; combine with literals: 1###,43,44
 const LINEPLANNINGNUMBERS = envList("LINEPLANNINGNUMBERS").map((code) =>
@@ -92,8 +86,7 @@ const RET_BEURS_TRAM_PUBLIC = {
   1704: "11",
 };
 // GOVI/BISON wall-clock times are Dutch local time, not the server TZ (UTC on Cloud Run).
-const TRANSIT_TIMEZONE =
-  process.env.TRANSIT_TIMEZONE || "Europe/Amsterdam";
+const TRANSIT_TIMEZONE = process.env.TRANSIT_TIMEZONE || "Europe/Amsterdam";
 const NO_TRAIN_INITIAL_DELAY_MS = Number(
   process.env.NO_TRAIN_INITIAL_DELAY_MS || 30000,
 );
@@ -303,10 +296,7 @@ function getBroadcastDedupeKey(obj) {
     const rows = Array.isArray(obj.matchingRows) ? obj.matchingRows : [];
     const vehicles = rows
       .map(
-        (row) =>
-          row?.entity?.vehiclenumber ||
-          row?.data?.vehiclenumber ||
-          "",
+        (row) => row?.entity?.vehiclenumber || row?.data?.vehiclenumber || "",
       )
       .filter(Boolean)
       .sort()
@@ -485,9 +475,7 @@ function getStatusPayload() {
         ...bridgeStatus.zmq.turbo,
         bytesReceived: turboBytes,
         bytesRelevant: turboRelevantBytes,
-        secondsSinceConnected: secondsSince(
-          bridgeStatus.zmq.turbo.connectedAt,
-        ),
+        secondsSinceConnected: secondsSince(bridgeStatus.zmq.turbo.connectedAt),
         secondsSinceLastMessage: secondsSince(
           bridgeStatus.zmq.turbo.lastMessageAt,
         ),
@@ -733,12 +721,7 @@ function getRowValue(row, fieldNames) {
     const key = Object.keys(row).find(
       (candidate) => candidate.toLowerCase() === String(name).toLowerCase(),
     );
-    if (
-      key &&
-      row[key] !== undefined &&
-      row[key] !== null &&
-      row[key] !== ""
-    ) {
+    if (key && row[key] !== undefined && row[key] !== null && row[key] !== "") {
       return row[key];
     }
   }
@@ -806,7 +789,15 @@ function getWallTimeFormatter(timeZone) {
   return formatter;
 }
 
-function zonedWallTimeToUtcDate(year, month, day, hour, minute, second, timeZone) {
+function zonedWallTimeToUtcDate(
+  year,
+  month,
+  day,
+  hour,
+  minute,
+  second,
+  timeZone,
+) {
   // Convert a wall-clock time in `timeZone` to a UTC Date without depending on
   // process TZ (Cloud Run is UTC; GOVI times are Europe/Amsterdam).
   const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
@@ -956,11 +947,11 @@ function extractEtaSeconds(row, receivedAt) {
     const targetDate = toDateOnDay(targetArrival, operatingDay, receivedAt);
     if (targetDate) {
       const punctuality = Number(getRowValue(row, "punctuality"));
-      const punctualityMs = Number.isFinite(punctuality) ? punctuality * 1000 : 0;
+      const punctualityMs = Number.isFinite(punctuality)
+        ? punctuality * 1000
+        : 0;
       const expectedMs = targetDate.getTime() + punctualityMs;
-      return Math.round(
-        (expectedMs - new Date(receivedAt).getTime()) / 1000,
-      );
+      return Math.round((expectedMs - new Date(receivedAt).getTime()) / 1000);
     }
   }
 
@@ -1016,9 +1007,12 @@ function buildRotterdamTrainStateCommands(topic, baseCommands) {
     const command = asUpperString(baseCommand.command);
     const row = baseCommand.data || {};
     const etaSeconds = extractEtaSeconds(row, baseCommand.receivedAt);
-    const stopCode = String(baseCommand.entity?.userstopcode || "").toLowerCase();
+    const stopCode = String(
+      baseCommand.entity?.userstopcode || "",
+    ).toLowerCase();
     const journeyKey = getJourneyKeyFromCommand(baseCommand);
-    const approachKey = stopCode && journeyKey ? `${stopCode}|${journeyKey}` : null;
+    const approachKey =
+      stopCode && journeyKey ? `${stopCode}|${journeyKey}` : null;
 
     if (containsNoTrainSignal(row, baseCommand)) {
       if (approachKey) {
@@ -1039,7 +1033,8 @@ function buildRotterdamTrainStateCommands(topic, baseCommands) {
     }
 
     const isApproachUpdate =
-      (protocol === "KV6" || protocol === "KV17") && command.includes("ONROUTE");
+      (protocol === "KV6" || protocol === "KV17") &&
+      command.includes("ONROUTE");
 
     if (isApproachUpdate) {
       // RIG only detects approach; GOVI owns ETA / ARRIVING forecasts.
@@ -1049,7 +1044,8 @@ function buildRotterdamTrainStateCommands(topic, baseCommands) {
     }
 
     const isPureArrival =
-      (protocol === "KV6" || protocol === "KV17") && command.endsWith("_ARRIVAL");
+      (protocol === "KV6" || protocol === "KV17") &&
+      command.endsWith("_ARRIVAL");
 
     const isArrived =
       command.includes("ONSTOP") ||
@@ -1220,7 +1216,11 @@ function processStopCommand(commandMessage) {
     }
 
     stopStates.set(stopCode, { command, journeyKey: null });
-    return { broadcast: true, scheduleDepartureTimer: false, clearDepartureTimer: true };
+    return {
+      broadcast: true,
+      scheduleDepartureTimer: false,
+      clearDepartureTimer: true,
+    };
   }
 
   if (command === "RET_TRAIN_ARRIVING_15S") {
@@ -1236,7 +1236,11 @@ function processStopCommand(commandMessage) {
     }
 
     stopStates.set(stopCode, { command, journeyKey });
-    return { broadcast: true, scheduleDepartureTimer: false, clearDepartureTimer: true };
+    return {
+      broadcast: true,
+      scheduleDepartureTimer: false,
+      clearDepartureTimer: true,
+    };
   }
 
   if (command === "RET_TRAIN_ARRIVED") {
@@ -1254,7 +1258,11 @@ function processStopCommand(commandMessage) {
     }
 
     stopStates.set(stopCode, { command, journeyKey });
-    return { broadcast: true, scheduleDepartureTimer: false, clearDepartureTimer: true };
+    return {
+      broadcast: true,
+      scheduleDepartureTimer: false,
+      clearDepartureTimer: true,
+    };
   }
 
   if (command === "RET_TRAIN_DEPARTED") {
@@ -1267,7 +1275,11 @@ function processStopCommand(commandMessage) {
     };
   }
 
-  return { broadcast: true, scheduleDepartureTimer: false, clearDepartureTimer: false };
+  return {
+    broadcast: true,
+    scheduleDepartureTimer: false,
+    clearDepartureTimer: false,
+  };
 }
 
 function buildTransitCommands(topic, parsedXml, receivedAt) {
@@ -1347,7 +1359,7 @@ function parseCtxDatedPassTimes(text) {
 
     for (let index = 0; index < columns.length; index += 1) {
       const value = values[index];
-      row[columns[index]] = value === "\\0" ? "" : value ?? "";
+      row[columns[index]] = value === "\\0" ? "" : (value ?? "");
     }
 
     rows.push(row);
@@ -1415,7 +1427,8 @@ function handleForecastUpdate(topic, row, receivedAt) {
     data: row,
   };
   const journeyKey = getJourneyKeyFromCommand(baseCommand);
-  const approachKey = stopCode && journeyKey ? `${stopCode}|${journeyKey}` : null;
+  const approachKey =
+    stopCode && journeyKey ? `${stopCode}|${journeyKey}` : null;
   const tripStatus = asUpperString(getRowValue(row, "tripstopstatus"));
   const expectedArrivalMs = extractExpectedArrivalMs(row, receivedAt);
   const etaSeconds = Number.isFinite(expectedArrivalMs)
@@ -1622,7 +1635,9 @@ function getSortedUpcoming(
     list.push({
       ...entry,
       etaSeconds: Number.isFinite(etaSeconds) ? etaSeconds : 0,
-      cached: !goviLive || nowMs - (entry.goviUpdatedAtMs || entry.updatedAtMs) > 5000,
+      cached:
+        !goviLive ||
+        nowMs - (entry.goviUpdatedAtMs || entry.updatedAtMs) > 5000,
       displayStatus: displayStatusForUpcoming(entry),
     });
   }
@@ -1819,7 +1834,10 @@ function reconcileUpcomingArrivals(stopCode) {
   if (byJourney) {
     for (const entry of byJourney.values()) {
       if (!nearest || entry.journeyKey !== nearest.journeyKey) {
-        if (entry.approachKey && displayStatusForUpcoming(entry) === "Driving") {
+        if (
+          entry.approachKey &&
+          displayStatusForUpcoming(entry) === "Driving"
+        ) {
           clearArrivingTimer(entry.approachKey);
         }
       }
@@ -1885,10 +1903,7 @@ function clearArrivedCountdown(approachKey) {
 /** While ARRIVING, slip/accelerate ARRIVED from live GOVI ETA (feeds stay subscribed). */
 function refreshArrivedCountdownFromLiveEta(stopCode) {
   const current = stopStates.get(stopCode);
-  if (
-    current?.command !== "RET_TRAIN_ARRIVING_15S" ||
-    !current.journeyKey
-  ) {
+  if (current?.command !== "RET_TRAIN_ARRIVING_15S" || !current.journeyKey) {
     return;
   }
 
@@ -1906,8 +1921,7 @@ function refreshArrivedCountdownFromLiveEta(stopCode) {
     topic: entry.topic,
     entity: {
       ...(entry.entity || {}),
-      userstopcode:
-        entry.entity?.userstopcode || entry.stopCode || stopCode,
+      userstopcode: entry.entity?.userstopcode || entry.stopCode || stopCode,
     },
     data: entry.data || {},
     etaSeconds: Math.max(0, commandEtaSeconds(trueEta)),
@@ -2044,7 +2058,10 @@ function emitDerivedCommand(commandMessage) {
     scheduleDepartureNoTrain(commandMessage);
   }
 
-  syncFeedsToCommand(commandMessage.command, `command:${commandMessage.command}`);
+  syncFeedsToCommand(
+    commandMessage.command,
+    `command:${commandMessage.command}`,
+  );
 
   if (commandMessage.command === "RET_TRAIN_ARRIVING_15S") {
     scheduleArrivedFromEta(commandMessage);
@@ -2135,9 +2152,7 @@ function processTurboMessage(topic, decoded, receivedAt) {
 
     const touchedStops = new Set(
       matchingRows
-        .map((row) =>
-          String(row?.entity?.userstopcode || "").toLowerCase(),
-        )
+        .map((row) => String(row?.entity?.userstopcode || "").toLowerCase())
         .filter(Boolean),
     );
 
@@ -2164,8 +2179,12 @@ function processTurboMessage(topic, decoded, receivedAt) {
         isNearest: nearestJourneyKeys.has(row.journeyKey),
       }))
       .sort((a, b) => {
-        const etaA = Number.isFinite(a.etaSeconds) ? a.etaSeconds : Number.POSITIVE_INFINITY;
-        const etaB = Number.isFinite(b.etaSeconds) ? b.etaSeconds : Number.POSITIVE_INFINITY;
+        const etaA = Number.isFinite(a.etaSeconds)
+          ? a.etaSeconds
+          : Number.POSITIVE_INFINITY;
+        const etaB = Number.isFinite(b.etaSeconds)
+          ? b.etaSeconds
+          : Number.POSITIVE_INFINITY;
         if (etaA !== etaB) {
           return etaA - etaB;
         }
@@ -2188,8 +2207,7 @@ function recordInboundMessage(
   feed,
   payloadBytes = 0,
 ) {
-  const stats =
-    feed === "turbo" ? bridgeStatus.zmq.turbo : bridgeStatus.zmq;
+  const stats = feed === "turbo" ? bridgeStatus.zmq.turbo : bridgeStatus.zmq;
 
   stats.totalMessages += 1;
   stats.lastMessageAt = new Date().toISOString();
@@ -2430,7 +2448,9 @@ async function startZmqBridge() {
       `[ZMQ] Filtering activity to lineplanningnumbers: ${LINEPLANNINGNUMBERS.join(", ")}`,
     );
   } else {
-    console.log(`[ZMQ] Line filter off (all LinePlanningNumbers at stop filter)`);
+    console.log(
+      `[ZMQ] Line filter off (all LinePlanningNumbers at stop filter)`,
+    );
   }
   if (COMMAND_ETA_OFFSET_SEC !== 0) {
     console.log(
@@ -2578,7 +2598,8 @@ async function startTurboBridge() {
     // Early reject: skip CTX/XML parse when GOVI stop filter is not present.
     if (
       GOVI_USERSTOPCODES.length > 0 &&
-      (!decoded.text || !xmlContainsTrackedStop(decoded.text, GOVI_USERSTOPCODES))
+      (!decoded.text ||
+        !xmlContainsTrackedStop(decoded.text, GOVI_USERSTOPCODES))
     ) {
       bridgeStatus.zmq.turbo.totalMessages += 1;
       bridgeStatus.zmq.turbo.ignoredMessages += 1;

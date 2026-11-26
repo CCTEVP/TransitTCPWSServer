@@ -45,8 +45,8 @@ npm start
 
 5. Open:
 
-- Status dashboard: http://localhost:8080
-- Display client: http://localhost:8080/content
+- Status dashboard: http://localhost:8282
+- Display client: http://localhost:8282/content
 
 ## Environment variables
 
@@ -58,9 +58,9 @@ npm start
 
 ## Status and monitoring
 
-- Status page: `http://localhost:8080`
-- Display client: `http://localhost:8080/content`
-- Status API: `http://localhost:8080/api/status`
+- Status page: `http://localhost:8282`
+- Display client: `http://localhost:8282/content`
+- Status API: `http://localhost:8282/api/status`
 
 The status API includes:
 
@@ -112,7 +112,7 @@ is created.
 
 ```bash
 docker build -t transit-tcp-ws-server:local .
-docker run --rm -p 8080:8080 --env-file .env transit-tcp-ws-server:local
+docker run --rm -p 8282:8282 --env-file .env transit-tcp-ws-server:local
 ```
 
 Note: `docker --env-file` keeps quotes, so `LINEPLANNINGNUMBERS="1###"` in `.env`

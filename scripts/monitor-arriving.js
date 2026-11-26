@@ -1,8 +1,9 @@
 const WebSocket = require("ws");
 
-const WS_URL = process.env.MONITOR_WS_URL || "ws://localhost:8080/control";
+const WS_URL = process.env.MONITOR_WS_URL || "ws://localhost:8282/control";
 const DURATION_MS = Number(process.env.MONITOR_MS || 12 * 60 * 1000);
-const STATUS_URL = process.env.MONITOR_STATUS_URL || "http://localhost:8080/api/status";
+const STATUS_URL =
+  process.env.MONITOR_STATUS_URL || "http://localhost:8282/api/status";
 
 const events = [];
 let lastArrivingByVehicle = new Map();
@@ -76,10 +77,7 @@ function handleCommand(cmd, source) {
     return;
   }
 
-  if (
-    command === "RET_TRAIN_DEPARTED" ||
-    command === "RET_NO_TRAIN"
-  ) {
+  if (command === "RET_TRAIN_DEPARTED" || command === "RET_NO_TRAIN") {
     if (command === "RET_TRAIN_DEPARTED") {
       arrivedSeenByVehicle.delete(vehicle);
     }
@@ -87,7 +85,10 @@ function handleCommand(cmd, source) {
       arrivedSeenByVehicle.clear();
       lastArrivingByVehicle.clear();
     }
-    logEvent(command.replace("RET_", ""), `vehicle=${vehicle} source=${source}`);
+    logEvent(
+      command.replace("RET_", ""),
+      `vehicle=${vehicle} source=${source}`,
+    );
   }
 }
 
