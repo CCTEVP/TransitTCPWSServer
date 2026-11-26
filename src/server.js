@@ -618,36 +618,38 @@ wss.on("connection", (socket, request) => {
   });
 });
 
-setInterval(() => {
-  const heartbeat = JSON.stringify({
-    type: "heartbeat",
-    serverTime: new Date().toISOString(),
-  });
+if (require.main === module) {
+  setInterval(() => {
+    const heartbeat = JSON.stringify({
+      type: "heartbeat",
+      serverTime: new Date().toISOString(),
+    });
 
-  for (const client of wss.clients) {
-    if (client.readyState !== WebSocket.OPEN) {
-      continue;
-    }
+    for (const client of wss.clients) {
+      if (client.readyState !== WebSocket.OPEN) {
+        continue;
+      }
 
-    if (!client.isAlive) {
-      client.terminate();
-      continue;
-    }
+      if (!client.isAlive) {
+        client.terminate();
+        continue;
+      }
 
-    client.isAlive = false;
-    // Protocol ping (browser-handled) + JSON heartbeat (visible to client JS).
-    try {
-      client.ping();
-    } catch {
-      // ignore
+      client.isAlive = false;
+      // Protocol ping (browser-handled) + JSON heartbeat (visible to client JS).
+      try {
+        client.ping();
+      } catch {
+        // ignore
+      }
+      try {
+        client.send(heartbeat);
+      } catch {
+        // ignore
+      }
     }
-    try {
-      client.send(heartbeat);
-    } catch {
-      // ignore
-    }
-  }
-}, WS_PING_INTERVAL_MS);
+  }, WS_PING_INTERVAL_MS);
+}
 
 function safeUtf8(buffer) {
   try {
@@ -2646,42 +2648,62 @@ function sendInitialNoTrain() {
   );
 }
 
-server.listen(PORT, () => {
-  console.log(`[HTTP/WS] Server listening on http://localhost:${PORT}`);
-  setTimeout(sendInitialNoTrain, NO_TRAIN_INITIAL_DELAY_MS);
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`[HTTP/WS] Server listening on http://localhost:${PORT}`);
+    setTimeout(sendInitialNoTrain, NO_TRAIN_INITIAL_DELAY_MS);
 
-  // Keep ETA countdowns / nearest ARRIVING working from cache while GOVI is standby.
-  setInterval(() => {
-    const stops =
-      GOVI_USERSTOPCODES.length > 0
-        ? GOVI_USERSTOPCODES
-        : USERSTOPCODES.length > 0
-          ? USERSTOPCODES
-          : [...upcomingByStop.keys()];
-    for (const stopCode of stops) {
-      if (!upcomingByStop.has(stopCode)) {
-        continue;
+    // Keep ETA countdowns / nearest ARRIVING working from cache while GOVI is standby.
+    setInterval(() => {
+      const stops =
+        GOVI_USERSTOPCODES.length > 0
+          ? GOVI_USERSTOPCODES
+          : USERSTOPCODES.length > 0
+            ? USERSTOPCODES
+            : [...upcomingByStop.keys()];
+      for (const stopCode of stops) {
+        if (!upcomingByStop.has(stopCode)) {
+          continue;
+        }
+        reconcileUpcomingArrivals(stopCode);
       }
-      reconcileUpcomingArrivals(stopCode);
-    }
-  }, 1000);
-});
+    }, 1000);
+  });
 
-startZmqBridge().catch((error) => {
-  bridgeStatus.zmq.state = "error";
-  bridgeStatus.zmq.lastError = {
-    message: error?.message || String(error),
-    at: new Date().toISOString(),
-  };
-  console.error("[ZMQ] Bridge failed:", error);
-  process.exitCode = 1;
-});
+  startZmqBridge().catch((error) => {
+    bridgeStatus.zmq.state = "error";
+    bridgeStatus.zmq.lastError = {
+      message: error?.message || String(error),
+      at: new Date().toISOString(),
+    };
+    console.error("[ZMQ] Bridge failed:", error);
+    process.exitCode = 1;
+  });
 
-startTurboBridge().catch((error) => {
-  bridgeStatus.zmq.turbo.state = "error";
-  bridgeStatus.zmq.turbo.lastError = {
-    message: error?.message || String(error),
-    at: new Date().toISOString(),
-  };
-  console.error("[ZMQ/TURBO] Bridge failed:", error);
-});
+  startTurboBridge().catch((error) => {
+    bridgeStatus.zmq.turbo.state = "error";
+    bridgeStatus.zmq.turbo.lastError = {
+      message: error?.message || String(error),
+      at: new Date().toISOString(),
+    };
+    console.error("[ZMQ/TURBO] Bridge failed:", error);
+  });
+}
+
+// Exported for unit tests (test/*.test.js). Startup side effects above are guarded by require.main.
+module.exports = {
+  secondsSince,
+  normalizeWsChannel,
+  getVehicleNumberFromMessage,
+  safeUtf8,
+  toArray,
+  detectAndDecodePayload,
+  getRowValue,
+  parseDayParts,
+  zonedWallTimeToUtcDate,
+  toDateOnDay,
+  extractEtaSeconds,
+  extractExpectedArrivalMs,
+  containsNoTrainSignal,
+  isAllowedRetCommand,
+};
