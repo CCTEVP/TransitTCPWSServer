@@ -6,7 +6,15 @@ const vm = require("node:vm");
 
 // Loads the /content display script (public/content/transit/v4/app.js) against
 // fake DOM, media and WebSocket objects, so playback races can be driven step by step.
-const APP_PATH = path.join(__dirname, "..", "public", "content", "transit", "v4", "app.js");
+const APP_PATH = path.join(
+  __dirname,
+  "..",
+  "public",
+  "content",
+  "transit",
+  "v4",
+  "app.js",
+);
 
 function flush() {
   return new Promise((resolve) => setImmediate(resolve));
@@ -30,19 +38,29 @@ function makeElement(id) {
     attributes: {},
     classList: {
       classes: new Set(),
-      add(c) { this.classes.add(c); },
-      remove(c) { this.classes.delete(c); },
-      contains(c) { return this.classes.has(c); },
+      add(c) {
+        this.classes.add(c);
+      },
+      remove(c) {
+        this.classes.delete(c);
+      },
+      contains(c) {
+        return this.classes.has(c);
+      },
     },
     addEventListener(type, fn, opts = {}) {
       this.listeners.push({ type, fn, once: Boolean(opts.once) });
     },
     removeEventListener(type, fn) {
-      this.listeners = this.listeners.filter((l) => !(l.type === type && l.fn === fn));
+      this.listeners = this.listeners.filter(
+        (l) => !(l.type === type && l.fn === fn),
+      );
     },
     fire(type) {
       const current = this.listeners.filter((l) => l.type === type);
-      this.listeners = this.listeners.filter((l) => !(l.type === type && l.once));
+      this.listeners = this.listeners.filter(
+        (l) => !(l.type === type && l.once),
+      );
       for (const l of current) l.fn({ type });
     },
     play() {
@@ -52,8 +70,12 @@ function makeElement(id) {
     },
     pause() {},
     load() {},
-    removeAttribute(name) { delete this.attributes[name]; },
-    setAttribute(name, value) { this.attributes[name] = String(value); },
+    removeAttribute(name) {
+      delete this.attributes[name];
+    },
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    },
   };
 }
 
@@ -73,8 +95,12 @@ function loadDisplay() {
       this.listeners = [];
       sockets.push(this);
     }
-    addEventListener(type, fn) { this.listeners.push({ type, fn }); }
-    close() { this.readyState = 3; }
+    addEventListener(type, fn) {
+      this.listeners.push({ type, fn });
+    }
+    close() {
+      this.readyState = 3;
+    }
     fire(type, data) {
       for (const l of this.listeners) if (l.type === type) l.fn({ type, data });
     }
@@ -83,7 +109,10 @@ function loadDisplay() {
       this.fire("open");
     }
     send(command) {
-      this.fire("message", JSON.stringify({ type: "transit-command", command }));
+      this.fire(
+        "message",
+        JSON.stringify({ type: "transit-command", command }),
+      );
     }
   }
   FakeWebSocket.OPEN = 1;
@@ -93,7 +122,8 @@ function loadDisplay() {
     document: { getElementById: (id) => elements[id] || null },
     HTMLMediaElement: { HAVE_CURRENT_DATA: 2 },
     WebSocket: FakeWebSocket,
-    location: { protocol: "http:", host: "localhost:8080" },
+    URLSearchParams,
+    location: { protocol: "http:", host: "localhost:8282", search: "" },
     console: { log() {}, error() {} },
     // Timers are stubbed: tests advance state explicitly, never by waiting.
     setTimeout: () => 0,
@@ -101,7 +131,9 @@ function loadDisplay() {
     setInterval: () => 0,
     clearInterval() {},
   });
-  vm.runInContext(fs.readFileSync(APP_PATH, "utf8"), context, { filename: APP_PATH });
+  vm.runInContext(fs.readFileSync(APP_PATH, "utf8"), context, {
+    filename: APP_PATH,
+  });
 
   return { context, elements, sockets };
 }
@@ -129,12 +161,23 @@ test("a superseded arriving clip cannot start a countdown over a later departure
   elements.videoA.readyState = 2;
   elements.videoA.fire("loadeddata");
   await flush();
-  assert.equal(elements.videoA.plays.length, 1, "superseded arriving must not call play()");
+  assert.equal(
+    elements.videoA.plays.length,
+    1,
+    "superseded arriving must not call play()",
+  );
   elements.videoA.plays[0].resolve(); // departure
   await flush();
 
-  assert.equal(vm.runInContext("currentCommand", context), "RET_TRAIN_DEPARTED");
-  assert.equal(elements.countdown.hidden, true, "countdown must not show during departure");
+  assert.equal(
+    vm.runInContext("currentCommand", context),
+    "RET_TRAIN_DEPARTED",
+  );
+  assert.equal(
+    elements.countdown.hidden,
+    true,
+    "countdown must not show during departure",
+  );
 });
 
 test("normal arriving shows the countdown, then arrived hides it", async () => {
@@ -156,7 +199,10 @@ test("normal arriving shows the countdown, then arrived hides it", async () => {
   elements.videoA.plays[0].resolve();
   await flush();
 
-  assert.equal(vm.runInContext("currentCommand", context), "RET_TRAIN_ARRIVING_15S");
+  assert.equal(
+    vm.runInContext("currentCommand", context),
+    "RET_TRAIN_ARRIVING_15S",
+  );
   assert.equal(elements.countdown.hidden, false);
   assert.equal(elements.countdown.textContent, "10");
 

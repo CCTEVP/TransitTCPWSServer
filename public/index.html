@@ -84,13 +84,23 @@
         flex: 1 1 auto;
         min-height: 0;
         display: grid;
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
         gap: 0.65rem;
+      }
+
+      .split > *,
+      .column > *,
+      .panel,
+      .panel-body,
+      .panel-body > *,
+      .msgFeed,
+      .msgRow {
+        min-width: 0;
       }
 
       @media (min-width: 980px) {
         .split {
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
           gap: 0;
           border-radius: 14px;
           overflow: hidden;
@@ -157,6 +167,12 @@
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 0.4rem;
+      }
+
+      .kpi-value {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .kpi {
@@ -466,7 +482,23 @@
         color: var(--muted);
       }
 
+      .msgRow > summary {
+        list-style: none;
+        cursor: pointer;
+      }
+
+      .msgRow > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .msgTopic {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
       .msgPayload {
+        max-height: 16rem;
+        overflow: auto;
         margin-top: 0.3rem;
         border-radius: 6px;
         padding: 0.38rem;
@@ -667,30 +699,248 @@
         overflow: auto;
       }
 
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .view-tabs {
+        display: none;
+      }
+
+      /* ---------- Phones and narrow tablets ---------- */
       @media (max-width: 979px) {
         body {
           overflow: auto;
         }
 
         .wrap {
+          width: 100%;
           height: auto;
           min-height: 100vh;
           overflow: visible;
+          padding: 0 0 calc(0.75rem + env(safe-area-inset-bottom));
+        }
+
+        /* Sticky bar: title, refresh, and the Feeds / Displays switch. */
+        .topbar {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+          margin: 0;
+          padding: calc(0.55rem + env(safe-area-inset-top)) 0.75rem 0.55rem;
+          background: rgba(232, 238, 242, 0.94);
+          backdrop-filter: blur(8px);
+          border-bottom: 1px solid var(--line);
+        }
+
+        h1 {
+          font-size: 1.1rem;
+        }
+
+        .brand-sub {
+          display: none;
+        }
+
+        .view-tabs {
+          display: flex;
+          flex: 1 0 100%;
+          padding: 0.2rem;
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.7);
+          border: 1px solid var(--line);
+        }
+
+        .view-tabs button {
+          flex: 1 1 0;
+          min-height: 2.4rem;
+          border: 0;
+          border-radius: 8px;
+          background: transparent;
+          color: var(--muted);
+          font: inherit;
+          font-size: 0.85rem;
+          font-weight: 650;
+          cursor: pointer;
+        }
+
+        .view-tabs button[aria-selected="true"] {
+          background: #fff;
+          color: var(--ink);
+          box-shadow: 0 1px 3px rgba(16, 42, 54, 0.15);
+        }
+
+        .wrap[data-view="tcp"] .column.ws,
+        .wrap[data-view="ws"] .column.tcp {
+          display: none;
+        }
+
+        .split {
+          flex: 0 0 auto;
+          padding: 0.6rem 0.6rem 0;
+        }
+
+        .panel-grow,
+        .panel-grow:not(.is-collapsed) > .panel-body {
+          flex: 0 0 auto;
         }
 
         .column {
           height: auto;
           overflow: visible;
+          padding: 0.6rem;
+          border-radius: 12px;
+        }
+
+        .kpi-grid {
+          grid-template-columns: repeat(auto-fit, minmax(6.4rem, 1fr));
+        }
+
+        .btn {
+          min-height: 2.25rem;
+          padding: 0.35rem 0.8rem;
+        }
+
+        .panel-toggle {
+          min-height: 2.9rem;
         }
 
         .panel-grow:not(.is-collapsed) .msgFeed {
-          height: 22rem;
+          height: auto;
+          max-height: 70vh;
+        }
+
+        .msgPayload {
+          max-height: 12rem;
+          font-size: 0.7rem;
+        }
+
+        .kv-list li {
+          flex-wrap: wrap;
+        }
+
+        .kv-list .mono {
+          overflow-wrap: anywhere;
+        }
+
+        /* Coming vehicles: one card per vehicle instead of an 8-column table. */
+        .upcoming-panel {
+          max-height: none;
+          border: 0;
+          background: transparent;
+        }
+
+        .upcoming-table thead {
+          display: none;
+        }
+
+        .upcoming-table,
+        .upcoming-table tbody {
+          display: block;
+        }
+
+        .upcoming-table tr {
+          display: grid;
+          grid-template-columns: 5.6rem minmax(0, 1fr) auto;
+          grid-template-areas:
+            "eta vehicle status"
+            "eta line expected"
+            "eta dest stop";
+          column-gap: 0.6rem;
+          row-gap: 0.1rem;
+          align-items: center;
+          margin-bottom: 0.45rem;
+          padding: 0.55rem 0.65rem;
+          border-radius: 10px;
+          background: #fff;
+          border: 1px solid var(--tcp-border);
+        }
+
+        .upcoming-table tr.nearest {
+          border-color: var(--tcp-accent);
+          box-shadow: inset 3px 0 0 var(--tcp-accent);
+        }
+
+        .upcoming-table td {
+          padding: 0;
+          border: 0;
+          white-space: normal;
+          min-width: 0;
+        }
+
+        .upcoming-table tr.nearest td {
+          background: transparent;
+        }
+
+        .upcoming-table td.rank {
+          display: none;
+        }
+
+        .upcoming-table td.eta {
+          grid-area: eta;
+          font-size: 1.15rem;
+          text-align: center;
+          line-height: 1.1;
+          white-space: nowrap;
+        }
+
+        .upcoming-table td.vehicle {
+          grid-area: vehicle;
+          font-size: 0.95rem;
+        }
+
+        .upcoming-table td.status {
+          grid-area: status;
+          justify-self: end;
+        }
+
+        .upcoming-table td.line {
+          grid-area: line;
+        }
+
+        .upcoming-table td.expected {
+          grid-area: expected;
+          justify-self: end;
+          color: var(--muted);
+        }
+
+        .upcoming-table td.dest {
+          grid-area: dest;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .upcoming-table td.stop {
+          grid-area: stop;
+          justify-self: end;
+          color: var(--muted);
+          font-size: 0.72rem;
+        }
+
+        .upcoming-table td[data-label]::before {
+          content: attr(data-label) " ";
+          color: var(--muted);
+          font-size: 0.68rem;
+        }
+      }
+
+      @media (max-width: 360px) {
+        .upcoming-table tr {
+          grid-template-columns: 4.8rem minmax(0, 1fr) auto;
+        }
+
+        .upcoming-table td.eta {
+          font-size: 0.98rem;
         }
       }
     </style>
   </head>
   <body>
-    <main class="wrap">
+    <main class="wrap" data-view="tcp">
       <div class="topbar">
         <div class="brand">
           <h1>Transit Bridge</h1>
@@ -700,6 +950,14 @@
         </div>
         <div class="top-actions">
           <button id="refreshNow" class="btn" type="button">Refresh</button>
+        </div>
+        <div class="view-tabs" role="tablist" aria-label="Dashboard section">
+          <button type="button" role="tab" data-view="tcp" aria-selected="true">
+            Feeds
+          </button>
+          <button type="button" role="tab" data-view="ws" aria-selected="false">
+            Displays
+          </button>
         </div>
       </div>
 
@@ -1007,14 +1265,14 @@
             const dest = vehicle.destinationName || "—";
             return `
               <tr class="${nearestClass}">
-                <td>${vehicle.rank || ""}</td>
-                <td><strong>${vehicle.vehiclenumber || "—"}</strong>${nearestBadge}</td>
-                <td>${lineLabel}</td>
-                <td>${stopCode}</td>
-                <td>${dest}</td>
+                <td class="rank">${vehicle.rank || ""}</td>
+                <td class="vehicle"><strong>${vehicle.vehiclenumber || "—"}</strong>${nearestBadge}</td>
+                <td class="line" data-label="Line">${lineLabel}</td>
+                <td class="stop">${stopCode}</td>
+                <td class="dest">${dest}</td>
                 <td class="eta">${formatEta(vehicle.etaSeconds)}</td>
-                <td>${vehicle.expectedArrivalTime || "—"}</td>
-                <td>${statusBadge(vehicle.status || vehicle.tripStatus)}</td>
+                <td class="expected">${vehicle.expectedArrivalTime || "—"}</td>
+                <td class="status">${statusBadge(vehicle.status || vehicle.tripStatus)}</td>
               </tr>
             `;
           })
@@ -1246,20 +1504,34 @@
         return trimPayload(JSON.stringify(value || {}, null, 2));
       }
 
+      const wideScreen = window.matchMedia("(min-width: 980px)");
+
+      function createFeedRow(title, time, eventLine, payload) {
+        const row = document.createElement("details");
+        row.className = "msgRow";
+        row.open = wideScreen.matches;
+        row.innerHTML = `
+          <summary class="msgTop">
+            <div class="msgTopic">${title}</div>
+            <div class="msgMeta">${time}</div>
+          </summary>
+          ${eventLine ? `<div class="msgEvent">${eventLine}</div>` : ""}
+          <div class="msgPayload">${payload}</div>
+        `;
+        return row;
+      }
+
       function addMessageRow(message) {
         const empty = el.msgFeed.querySelector(".emptyMsg");
         if (empty) empty.remove();
 
-        const row = document.createElement("div");
-        row.className = "msgRow";
         const source = message.source ? `[${message.source}] ` : "";
-        row.innerHTML = `
-          <div class="msgTop">
-            <div class="msgTopic">${source}${message.topic || "(no topic)"}</div>
-            <div class="msgMeta">${new Date(message.receivedAt || Date.now()).toLocaleTimeString()}</div>
-          </div>
-          <div class="msgPayload">${trimPayload(message.payloadPreview || message.payloadText || "")}</div>
-        `;
+        const row = createFeedRow(
+          `${source}${message.topic || "(no topic)"}`,
+          new Date(message.receivedAt || Date.now()).toLocaleTimeString(),
+          "",
+          trimPayload(message.payloadPreview || message.payloadText || ""),
+        );
 
         el.msgFeed.prepend(row);
         while (el.msgFeed.children.length > maxRows) {
@@ -1274,15 +1546,12 @@
         const empty = el.msgFeed.querySelector(".emptyMsg");
         if (empty) empty.remove();
 
-        const row = document.createElement("div");
-        row.className = "msgRow";
-        row.innerHTML = `
-          <div class="msgTop">
-            <div class="msgTopic">${message.command || "COMMAND"}</div>
-            <div class="msgMeta">${new Date(message.receivedAt || Date.now()).toLocaleTimeString()}</div>
-          </div>
-          <div class="msgPayload">${trimJson(message)}</div>
-        `;
+        const row = createFeedRow(
+          message.command || "COMMAND",
+          new Date(message.receivedAt || Date.now()).toLocaleTimeString(),
+          "",
+          trimJson(message),
+        );
 
         el.msgFeed.prepend(row);
         while (el.msgFeed.children.length > maxRows) {
@@ -1303,16 +1572,14 @@
             ? payloadCommand
             : message.event || "ws-event";
 
-        const row = document.createElement("div");
-        row.className = "msgRow";
-        row.innerHTML = `
-          <div class="msgTop">
-            <div class="msgTopic">${title}</div>
-            <div class="msgMeta">${new Date(message.at || Date.now()).toLocaleTimeString()}</div>
-          </div>
-          <div class="msgEvent">${message.recipients !== undefined ? `recipients: ${message.recipients}` : ""}</div>
-          <div class="msgPayload">${message.event === "broadcast" && message.payload ? trimJson(message.payload) : trimJson(message)}</div>
-        `;
+        const row = createFeedRow(
+          title,
+          new Date(message.at || Date.now()).toLocaleTimeString(),
+          message.recipients !== undefined ? `recipients: ${message.recipients}` : "",
+          message.event === "broadcast" && message.payload
+            ? trimJson(message.payload)
+            : trimJson(message),
+        );
 
         el.wsEventFeed.prepend(row);
         while (el.wsEventFeed.children.length > maxRows) {
@@ -1451,6 +1718,33 @@
           '<div class="emptyMsg">Waiting for broadcast activity...</div>';
       });
 
+      function setupViewTabs() {
+        const wrap = document.querySelector(".wrap");
+        const tabs = [...document.querySelectorAll(".view-tabs [data-view]")];
+        const select = (view) => {
+          wrap.dataset.view = view;
+          for (const tab of tabs) {
+            tab.setAttribute("aria-selected", String(tab.dataset.view === view));
+          }
+          try {
+            localStorage.setItem("dashboardView", view);
+          } catch {
+            // storage unavailable (private mode): keep the choice for this visit only
+          }
+        };
+        for (const tab of tabs) {
+          tab.addEventListener("click", () => select(tab.dataset.view));
+        }
+        let saved = null;
+        try {
+          saved = localStorage.getItem("dashboardView");
+        } catch {
+          saved = null;
+        }
+        select(saved === "ws" ? "ws" : "tcp");
+      }
+
+      setupViewTabs();
       setupPanels();
       refreshStatus();
       connectLiveFeed();
